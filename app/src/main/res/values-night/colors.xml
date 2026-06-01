@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="xhs_bg">#15151A</color>
+    <color name="xhs_card">#202127</color>
+    <color name="xhs_card_soft">#24262D</color>
+    <color name="xhs_drawer_bg">#121318</color>
+    <color name="xhs_drawer_card">#1E2026</color>
+    <color name="xhs_drawer_card_stroke">#2A2C34</color>
+    <color name="xhs_drawer_text_primary">#F2F3F5</color>
+    <color name="xhs_drawer_text_secondary">#70737D</color>
+    <color name="xhs_drawer_icon">#E4E6EB</color>
+    <color name="xhs_drawer_footer_icon_bg">#2A2C34</color>
+    <color name="xhs_drawer_footer_icon_tint">#D4D7DD</color>
+    <color name="xhs_text_primary">#F5F5F7</color>
+    <color name="xhs_text_secondary">#8F919A</color>
+    <color name="xhs_text_muted">#6E717B</color>
+    <color name="xhs_divider">#31343D</color>
+    <color name="xhs_accent">#FF2442</color>
+    <color name="xhs_accent_soft">#33FF2442</color>
+    <color name="xhs_badge">#F35757</color>
+    <color name="xhs_scrim">#7A000000</color>
+    <color name="xhs_shadow">#24000000</color>
+    <color name="xhs_bottom_nav_surface">#111217</color>
+    <color name="xhs_bottom_nav_stroke">#22FFFFFF</color>
+    <color name="xhs_add_button_stroke">#33FFFFFF</color>
+    <color name="xhs_search_bg">#19191F</color>
+    <color name="xhs_search_bar_bg">#2B2B33</color>
+    <color name="xhs_search_chip_bg">#34343D</color>
+    <color name="xhs_search_divider">#2B2C34</color>
+    <color name="xhs_search_text_primary">#F5F5F7</color>
+    <color name="xhs_search_input_text">#C9CAD1</color>
+    <color name="xhs_search_input_hint">#6E707A</color>
+    <color name="xhs_search_action">#F3F4F6</color>
+    <color name="xhs_search_icon">#F3F4F6</color>
+    <color name="xhs_search_icon_muted">#B2B5BE</color>
+    <color name="xhs_search_icon_subtle">#666973</color>
+    <color name="xhs_search_hint_text">#9EA1AB</color>
+    <color name="xhs_search_voice_button_bg">#1E1E25</color>
+    <color name="xhs_search_voice_button_inner">#2A2A32</color>
+
+    <color name="bottom_nav_selected">#F5F5F7</color>
+    <color name="bottom_nav_unselected">#70737E</color>
+</resources>

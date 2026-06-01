@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_publish_options_sheet"
+    android:clipToPadding="false"
+    android:orientation="vertical"
+    android:paddingTop="0dp"
+    android:paddingBottom="10dp">
+
+    <TextView
+        android:id="@+id/optionAlbum"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:gravity="center"
+        android:text="从相册选择"
+        android:textColor="@color/xhs_text_primary"
+        android:textSize="17sp" />
+
+    <LinearLayout
+        android:id="@+id/optionCamera"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="相机"
+            android:textColor="@color/xhs_text_primary"
+            android:textSize="17sp"
+            android:textStyle="normal" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="拍摄与直播"
+            android:textColor="@color/xhs_text_secondary"
+            android:textSize="12sp"
+            android:textStyle="normal" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/optionText"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:gravity="center"
+        android:text="写文字"
+        android:textColor="@color/xhs_text_primary"
+        android:textSize="17sp"
+        android:textStyle="normal" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="10dp"
+        android:background="#FFF3F3F4" />
+
+    <TextView
+        android:id="@+id/optionCancel"
+        android:layout_width="match_parent"
+        android:layout_height="74dp"
+        android:paddingTop="16dp"
+        android:gravity="center_horizontal|top"
+        android:text="取消"
+        android:textColor="@color/xhs_text_primary"
+        android:textSize="17sp" />
+
+</LinearLayout>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginStart="12dp"
+    android:layout_marginTop="12dp"
+    android:layout_marginEnd="12dp"
+    android:background="@drawable/bg_xhs_form_card"
+    android:orientation="vertical">
+
+    <include layout="@layout/layout_edit_profile_row_gender" />
+    <include layout="@layout/layout_edit_profile_row_birthday" />
+    <include layout="@layout/layout_edit_profile_row_region" />
+    <include layout="@layout/layout_edit_profile_row_job" />
+    <include layout="@layout/layout_edit_profile_row_school" />
+    <include layout="@layout/layout_edit_profile_row_original" />
+</LinearLayout>

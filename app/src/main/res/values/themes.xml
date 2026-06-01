@@ -1,0 +1,57 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.RedBook" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:statusBarColor">@color/xhs_bg</item>
+        <item name="android:navigationBarColor">@color/xhs_bg</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+
+    <style name="Theme.RedBook.Splash" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">#16171C</item>
+        <item name="android:statusBarColor">#16171C</item>
+        <item name="android:navigationBarColor">#16171C</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+
+    <style name="TextAppearance.RedBook.BottomTab" parent="TextAppearance.Material3.LabelSmall">
+        <item name="android:textSize">15sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:includeFontPadding">false</item>
+    </style>
+
+    <style name="XhsMainTab">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginHorizontal">18dp</item>
+        <item name="android:paddingTop">6dp</item>
+        <item name="android:paddingBottom">6dp</item>
+        <item name="android:background">@drawable/bg_xhs_main_tab</item>
+        <item name="android:textColor">@color/xhs_main_tab_text</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">normal</item>
+    </style>
+
+    <style name="XhsCategoryTab">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginEnd">22dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">12dp</item>
+        <item name="android:background">@drawable/bg_xhs_category_tab</item>
+        <item name="android:textColor">@color/xhs_category_tab_text</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <style name="XhsCategoryExpandedTab">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">40dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_marginHorizontal">4dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:background">@drawable/bg_xhs_category_expand_chip</item>
+        <item name="android:textColor">@color/xhs_category_expand_chip_text</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+</resources>

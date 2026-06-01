@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/xhs_search_voice_button_bg" />
+            <corners android:radius="22dp" />
+        </shape>
+    </item>
+    <item android:gravity="center">
+        <shape android:shape="rectangle">
+            <size
+                android:width="46dp"
+                android:height="30dp" />
+            <solid android:color="@color/xhs_search_voice_button_inner" />
+            <corners android:radius="15dp" />
+        </shape>
+    </item>
+</layer-list>
