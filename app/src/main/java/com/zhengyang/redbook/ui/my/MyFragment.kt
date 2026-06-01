@@ -83,8 +83,8 @@ class MyFragment : Fragment() {
         val quickFadeDistance = 36.dpToPx()
         val toneShiftDistance = 140.dpToPx()
         val startColor = Color.TRANSPARENT
-        val midColor = Color.parseColor("#8A95A0A8")
-        val endColor = Color.parseColor("#FF6F848C")
+        val midColor = ContextCompat.getColor(requireContext(), R.color.xhs_profile_scrim_mid)
+        val endColor = ContextCompat.getColor(requireContext(), R.color.xhs_profile_scrim_end)
 
         binding.scrollContainer.setOnScrollChangeListener { _, _, scrollY, _, _ ->
             val quickProgress = (scrollY / quickFadeDistance.toFloat()).coerceIn(0f, 1f)

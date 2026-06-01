@@ -55,7 +55,7 @@
     <View
         android:layout_width="match_parent"
         android:layout_height="10dp"
-        android:background="#FFF3F3F4" />
+        android:background="@color/xhs_sheet_divider" />
 
     <TextView
         android:id="@+id/optionCancel"

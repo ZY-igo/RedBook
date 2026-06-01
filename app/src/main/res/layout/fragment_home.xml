@@ -65,23 +65,33 @@
                 app:tint="@color/xhs_text_primary" />
         </LinearLayout>
 
+        <View
+            android:id="@+id/topBarDivider"
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:background="#EAEAEA"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/topBar" />
+
         <LinearLayout
             android:id="@+id/discoverContentContainer"
             android:layout_width="0dp"
             android:layout_height="0dp"
-            android:paddingTop="20dp"
+            android:paddingTop="0dp"
             android:orientation="vertical"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/topBar">
+            app:layout_constraintTop_toBottomOf="@id/topBarDivider">
 
             <LinearLayout
                 android:id="@+id/categorySection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="0dp"
                 android:orientation="vertical"
+                android:paddingTop="0dp"
                 android:paddingStart="12dp"
                 android:paddingEnd="12dp">
 

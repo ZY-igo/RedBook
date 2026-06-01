@@ -120,7 +120,7 @@ class MessageFragment : Fragment() {
             rowBinding.iconAvatarImage.visibility = View.VISIBLE
             rowBinding.iconAvatarImage.setImageResource(checkNotNull(row.iconRes))
             rowBinding.iconAvatarImage.imageTintList =
-                ColorStateList.valueOf(requireContext().getColor(android.R.color.white))
+                ColorStateList.valueOf(requireContext().getColor(com.zhengyang.redbook.R.color.xhs_drawer_text_primary))
             rowBinding.iconAvatarImage.layoutParams = rowBinding.iconAvatarImage.layoutParams.apply {
                 width = row.iconSizeDp.dpToPx()
                 height = row.iconSizeDp.dpToPx()

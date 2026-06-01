@@ -2,7 +2,7 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#16171C">
+    android:background="@color/xhs_splash_bg">
 
     <LinearLayout
         android:layout_width="wrap_content"
@@ -18,7 +18,7 @@
             android:fontFamily="sans-serif-black"
             android:letterSpacing="-0.03"
             android:text="&#23567;&#32418;&#20070;"
-            android:textColor="#FF2442"
+            android:textColor="@color/xhs_accent"
             android:textSize="52sp" />
 
         <TextView
@@ -29,7 +29,7 @@
             android:fontFamily="sans-serif-medium"
             android:letterSpacing="0.18"
             android:text="&#20320;&#30340;&#29983;&#27963;&#20852;&#36259;&#31038;&#21306;"
-            android:textColor="#F3F4F6"
+            android:textColor="@color/xhs_splash_subtitle"
             android:textSize="18sp" />
     </LinearLayout>
 

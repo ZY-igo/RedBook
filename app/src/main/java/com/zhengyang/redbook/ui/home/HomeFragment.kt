@@ -18,6 +18,7 @@ import androidx.appcompat.content.res.AppCompatResources
 import androidx.appcompat.widget.AppCompatTextView
 import androidx.core.view.GravityCompat
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.postDelayed
 import androidx.core.view.updateLayoutParams
@@ -27,6 +28,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.StaggeredGridLayoutManager
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import androidx.drawerlayout.widget.DrawerLayout
 import com.zhengyang.redbook.R
 import com.zhengyang.redbook.databinding.FragmentHomeBinding
 import com.zhengyang.redbook.ui.home.HomeMockData.DiscoverCategory
@@ -233,6 +235,15 @@ class HomeFragment : Fragment() {
 
     private fun setupDrawer() {
         binding.drawerLayout.setScrimColor(requireContext().getColor(R.color.xhs_scrim))
+        binding.drawerLayout.addDrawerListener(object : DrawerLayout.SimpleDrawerListener() {
+            override fun onDrawerOpened(drawerView: View) {
+                updateSystemBarsForDrawer(isDrawerOpen = true)
+            }
+
+            override fun onDrawerClosed(drawerView: View) {
+                updateSystemBarsForDrawer(isDrawerOpen = false)
+            }
+        })
         configureDrawerSection(
             binding.root.findViewById<View>(R.id.drawerAddFriends).parent as ViewGroup,
             listOf(DrawerRowModel(R.drawable.ic_xhs_user_add, getString(R.string.drawer_add_friends)))
@@ -270,6 +281,18 @@ class HomeFragment : Fragment() {
             )
         )
         configureFooter()
+        updateSystemBarsForDrawer(isDrawerOpen = false)
+    }
+
+    private fun updateSystemBarsForDrawer(isDrawerOpen: Boolean) {
+        val window = activity?.window ?: return
+        val bgColor = requireContext().getColor(if (isDrawerOpen) R.color.xhs_drawer_bg else R.color.xhs_bg)
+        window.statusBarColor = bgColor
+        window.navigationBarColor = bgColor
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !isDrawerOpen
+            isAppearanceLightNavigationBars = !isDrawerOpen
+        }
     }
 
     private fun configureDrawerSection(container: ViewGroup, rows: List<DrawerRowModel>) {

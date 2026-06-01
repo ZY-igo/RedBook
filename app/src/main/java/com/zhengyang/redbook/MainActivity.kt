@@ -144,13 +144,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requiredPermissionsFor(mode: PublishTextActivity.Mode): List<String> = when (mode) {
-        PublishTextActivity.Mode.ALBUM -> listOf(
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                Manifest.permission.READ_MEDIA_IMAGES
-            } else {
-                Manifest.permission.READ_EXTERNAL_STORAGE
-            }
-        )
+        PublishTextActivity.Mode.ALBUM -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            listOf(
+                Manifest.permission.READ_MEDIA_IMAGES,
+                Manifest.permission.READ_MEDIA_VIDEO,
+                Manifest.permission.READ_MEDIA_AUDIO
+            )
+        } else {
+            listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
         PublishTextActivity.Mode.CAMERA -> listOf(Manifest.permission.CAMERA)
         PublishTextActivity.Mode.TEXT -> emptyList()
     }

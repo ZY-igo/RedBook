@@ -5,4 +5,33 @@
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
     </style>
+
+    <style name="Theme.RedBook.Splash" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/xhs_splash_bg</item>
+        <item name="android:statusBarColor">@color/xhs_splash_bg</item>
+        <item name="android:navigationBarColor">@color/xhs_splash_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+
+    <style name="Theme.RedBook.Search" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/xhs_search_bg</item>
+        <item name="android:colorBackground">@color/xhs_search_bg</item>
+        <item name="android:statusBarColor">@color/xhs_search_bg</item>
+        <item name="android:navigationBarColor">@color/xhs_search_bg</item>
+        <item name="colorPrimary">@color/xhs_search_accent</item>
+        <item name="colorSecondary">@color/xhs_search_accent</item>
+        <item name="colorTertiary">@color/xhs_search_accent</item>
+        <item name="colorSurface">@color/xhs_search_bg</item>
+        <item name="colorSurfaceContainer">@color/xhs_search_panel_bg</item>
+        <item name="colorOnSurface">@color/xhs_search_text_primary</item>
+        <item name="android:textColorPrimary">@color/xhs_search_text_primary</item>
+        <item name="android:textColorSecondary">@color/xhs_search_hint_text</item>
+        <item name="colorControlNormal">@color/xhs_search_icon_muted</item>
+        <item name="colorControlActivated">@color/xhs_search_accent</item>
+        <item name="colorControlHighlight">@color/xhs_search_chip_bg</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
 </resources>

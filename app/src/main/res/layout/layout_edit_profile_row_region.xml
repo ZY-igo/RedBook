@@ -21,6 +21,6 @@
         android:layout_weight="1"
         android:gravity="end"
         android:text="@string/me_choose_region"
-        android:textColor="#B5B5B5"
+        android:textColor="@color/xhs_form_hint"
         android:textSize="16sp" />
 </LinearLayout>

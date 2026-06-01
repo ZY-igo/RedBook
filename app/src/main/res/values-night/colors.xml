@@ -24,10 +24,12 @@
     <color name="xhs_bottom_nav_stroke">#22FFFFFF</color>
     <color name="xhs_add_button_stroke">#33FFFFFF</color>
     <color name="xhs_search_bg">#19191F</color>
+    <color name="xhs_search_panel_bg">#202028</color>
     <color name="xhs_search_bar_bg">#2B2B33</color>
     <color name="xhs_search_chip_bg">#34343D</color>
     <color name="xhs_search_divider">#2B2C34</color>
     <color name="xhs_search_text_primary">#F5F5F7</color>
+    <color name="xhs_search_text_secondary">#C9CAD1</color>
     <color name="xhs_search_input_text">#C9CAD1</color>
     <color name="xhs_search_input_hint">#6E707A</color>
     <color name="xhs_search_action">#F3F4F6</color>
@@ -35,9 +37,30 @@
     <color name="xhs_search_icon_muted">#B2B5BE</color>
     <color name="xhs_search_icon_subtle">#666973</color>
     <color name="xhs_search_hint_text">#9EA1AB</color>
+    <color name="xhs_search_voice_panel_bg">#202026</color>
     <color name="xhs_search_voice_button_bg">#1E1E25</color>
     <color name="xhs_search_voice_button_inner">#2A2A32</color>
+    <color name="xhs_search_hot_rank_bg">#4A3420</color>
+    <color name="xhs_search_hot_rank_text">#FFFE8A9B</color>
+    <color name="xhs_search_quick_action_icon_bg">#3A2529</color>
+    <color name="xhs_search_trend_meta">#8F95A1</color>
+    <color name="xhs_search_accent">#FFCF2F4A</color>
+    <color name="xhs_search_filter_selected_bg">#34343D</color>
+    <color name="xhs_search_filter_selected_text">#F5F5F7</color>
+    <color name="xhs_sheet_divider">#25262D</color>
+    <color name="xhs_form_hint">#6F7480</color>
+    <color name="xhs_profile_header_meta">#C8DCE5</color>
+    <color name="xhs_profile_header_meta_strong">#AEC6D1</color>
+    <color name="xhs_profile_header_meta_soft">#BBCFD8</color>
+    <color name="xhs_profile_header_badge_text">#8DD7FF</color>
+    <color name="xhs_profile_header_dismiss">#9AA8AF</color>
+    <color name="xhs_profile_panel_bg">#1D1E24</color>
+    <color name="xhs_profile_scrim_mid">#8A232A31</color>
+    <color name="xhs_profile_scrim_end">#FF161A20</color>
+    <color name="xhs_splash_bg">#16171C</color>
+    <color name="xhs_splash_subtitle">#F3F4F6</color>
 
     <color name="bottom_nav_selected">#F5F5F7</color>
     <color name="bottom_nav_unselected">#70737E</color>
+    <color name="xhs_refresh_secondary">#7A9AE8</color>
 </resources>
