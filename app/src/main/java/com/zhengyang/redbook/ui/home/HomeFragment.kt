@@ -448,6 +448,8 @@ class HomeFragment : Fragment() {
             addView(AppCompatTextView(requireContext()).apply {
                 layoutParams = LinearLayout.LayoutParams(dp(72), dp(30))
                 text = getString(R.string.message_follow_cta)
+                gravity = Gravity.CENTER
+                includeFontPadding = false
                 textSize = 13f
                 setTextColor(requireContext().getColor(R.color.xhs_accent))
                 background = GradientDrawable().apply {
