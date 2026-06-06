@@ -10,6 +10,7 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.ImageView
 import android.widget.LinearLayout
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.AppCompatTextView
 import androidx.core.content.ContextCompat
@@ -19,31 +20,23 @@ import androidx.core.view.doOnAttach
 import androidx.core.view.isVisible
 import androidx.core.view.updateLayoutParams
 import androidx.core.widget.doAfterTextChanged
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.zhengyang.redbook.R
 import com.zhengyang.redbook.databinding.ActivitySearchBinding
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 
+@AndroidEntryPoint
 class SearchActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySearchBinding
+    private val viewModel: SearchViewModel by viewModels()
 
-    private val historyItems = mutableListOf(
-        "数码",
-        "张元英",
-        "横店群演",
-        "短剧"
-    )
-    private val guessItems = listOf(
-        GuessItem("张元英", "人气热搜词"),
-        GuessItem("100种折纸方法大全", "教程收藏飙升"),
-        GuessItem("横店群演", "体验类内容升温"),
-        GuessItem("欢乐谷实景演绎体验", "周末出游热门"),
-        GuessItem("长得特别漂亮的群演", "话题讨论增长"),
-        GuessItem("张元英多高", "百科类搜索走高")
-    )
-
-    private var currentFilter = ResultFilter.ALL
-    private var currentQuery = ""
-    private var currentResults: List<SearchResultItem> = emptyList()
+    private var latestState = SearchUiState()
+    private var guessRotationOffset = 0
+    private var isSyncingInput = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,9 +45,7 @@ class SearchActivity : AppCompatActivity() {
 
         applySystemBarInsets()
         setupInteractions()
-        renderHistory()
-        renderGuessGrid()
-        showDefaultState()
+        collectUiState()
     }
 
     private fun applySystemBarInsets() {
@@ -84,48 +75,43 @@ class SearchActivity : AppCompatActivity() {
 
     private fun setupInteractions() {
         binding.buttonBack.setOnClickListener {
-            if (binding.resultContent.isVisible && binding.searchInput.text.isNullOrBlank()) {
-                showDefaultState()
+            if (latestState.screenMode == SearchScreenMode.RESULT &&
+                binding.searchInput.text.isNullOrBlank()
+            ) {
+                viewModel.loadInitial()
             } else {
                 finish()
             }
         }
         binding.searchAction.setOnClickListener {
-            submitSearch(binding.searchInput.text?.toString().orEmpty())
+            viewModel.submitSearch(binding.searchInput.text?.toString().orEmpty())
         }
         binding.buttonScan.setOnClickListener {
-            binding.searchInput.setText("张元英")
-            binding.searchInput.setSelection(binding.searchInput.text?.length ?: 0)
-            submitSearch("张元英")
+            submitPresetQuery("张元英")
         }
         binding.voiceButton.setOnClickListener {
-            binding.searchInput.setText("数码")
-            binding.searchInput.setSelection(binding.searchInput.text?.length ?: 0)
-            submitSearch("数码")
+            submitPresetQuery("数码")
         }
         binding.clearHistoryAction.setOnClickListener {
-            historyItems.clear()
-            renderHistory()
+            viewModel.clearHistory()
         }
         binding.moreGuessAction.setOnClickListener {
-            val rotated = guessItems.drop(2) + guessItems.take(2)
-            renderGuessGrid(rotated)
+            val size = latestState.guessItems.size
+            if (size > 0) {
+                guessRotationOffset = (guessRotationOffset + 2) % size
+                renderGuessGrid()
+            }
         }
         binding.searchInput.doAfterTextChanged { editable ->
-            val query = editable?.toString()?.trim().orEmpty()
-            if (query.isEmpty()) {
-                currentQuery = ""
-                showDefaultState()
-            } else if (query != currentQuery || !binding.resultContent.isVisible) {
-                renderSuggestionList(query)
-                showSuggestionState()
+            if (!isSyncingInput) {
+                viewModel.onQueryChanged(editable?.toString().orEmpty())
             }
         }
         binding.searchInput.setOnEditorActionListener { _, actionId, event ->
             val isSearchAction = actionId == EditorInfo.IME_ACTION_SEARCH
             val isEnterUp = event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_UP
             if (isSearchAction || isEnterUp) {
-                submitSearch(binding.searchInput.text?.toString().orEmpty())
+                viewModel.submitSearch(binding.searchInput.text?.toString().orEmpty())
                 true
             } else {
                 false
@@ -133,15 +119,54 @@ class SearchActivity : AppCompatActivity() {
         }
     }
 
+    private fun collectUiState() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.uiState.collect(::render)
+            }
+        }
+    }
+
+    private fun render(state: SearchUiState) {
+        latestState = state
+        syncInputText(state)
+        if (state.screenMode == SearchScreenMode.DEFAULT) {
+            guessRotationOffset = 0
+        }
+        renderHistory()
+        renderGuessGrid()
+        renderSuggestions()
+        renderResults()
+        showState(state.screenMode)
+    }
+
+    private fun syncInputText(state: SearchUiState) {
+        val target = if (state.screenMode == SearchScreenMode.DEFAULT) "" else state.currentQuery
+        val current = binding.searchInput.text?.toString().orEmpty()
+        if (current != target) {
+            isSyncingInput = true
+            binding.searchInput.setText(target)
+            binding.searchInput.setSelection(target.length)
+            isSyncingInput = false
+        }
+    }
+
     private fun renderHistory() {
         binding.historyChipContainer.removeAllViews()
-        binding.historySection.isVisible = historyItems.isNotEmpty()
-        historyItems.forEachIndexed { index, item ->
+        binding.historySection.isVisible = latestState.historyItems.isNotEmpty()
+        latestState.historyItems.forEachIndexed { index, item ->
             binding.historyChipContainer.addView(createHistoryChip(item, index == 0))
         }
     }
 
-    private fun renderGuessGrid(items: List<GuessItem> = guessItems) {
+    private fun renderGuessGrid() {
+        val baseItems = latestState.guessItems
+        val items = if (baseItems.isEmpty()) {
+            emptyList()
+        } else {
+            baseItems.drop(guessRotationOffset) + baseItems.take(guessRotationOffset)
+        }
+
         binding.trendingContainer.removeAllViews()
         items.chunked(2).forEachIndexed { rowIndex, rowItems ->
             binding.trendingContainer.addView(LinearLayout(this).apply {
@@ -174,42 +199,28 @@ class SearchActivity : AppCompatActivity() {
         }
     }
 
-    private fun renderSuggestionList(query: String) {
-        val suggestions = buildSuggestions(query)
+    private fun renderSuggestions() {
         binding.suggestionContainer.removeAllViews()
-        suggestions.forEachIndexed { index, item ->
-            binding.suggestionContainer.addView(createSuggestionRow(item, index == suggestions.lastIndex))
+        latestState.suggestionItems.forEachIndexed { index, item ->
+            binding.suggestionContainer.addView(
+                createSuggestionRow(item, index == latestState.suggestionItems.lastIndex)
+            )
         }
     }
 
-    private fun submitSearch(rawQuery: String) {
-        val query = rawQuery.trim()
-        if (query.isEmpty()) {
-            showDefaultState()
-            return
+    private fun renderResults() {
+        val filtered = when (latestState.currentFilter) {
+            ResultFilter.ALL -> latestState.resultItems
+            else -> latestState.resultItems.filter { it.filter == latestState.currentFilter }
         }
 
-        currentQuery = query
-        addToHistory(query)
-        currentFilter = ResultFilter.ALL
-        currentResults = resultsForQuery(query)
-        binding.searchInput.setText(query)
-        binding.searchInput.setSelection(query.length)
-        renderResultTabs()
-        renderResults()
-        showResultState()
-    }
+        binding.resultKeyword.text = latestState.currentQuery
+        binding.resultCount.text = getString(
+            R.string.search_result_count,
+            filtered.size,
+            latestState.currentFilter.label
+        )
 
-    private fun addToHistory(query: String) {
-        historyItems.remove(query)
-        historyItems.add(0, query)
-        if (historyItems.size > 6) {
-            historyItems.removeAt(historyItems.lastIndex)
-        }
-        renderHistory()
-    }
-
-    private fun renderResultTabs() {
         binding.resultTabContainer.removeAllViews()
         ResultFilter.values().forEachIndexed { index, filter ->
             binding.resultTabContainer.addView(createResultTab(filter).apply {
@@ -218,20 +229,6 @@ class SearchActivity : AppCompatActivity() {
                 }
             })
         }
-    }
-
-    private fun renderResults() {
-        val filtered = when (currentFilter) {
-            ResultFilter.ALL -> currentResults
-            else -> currentResults.filter { it.filter == currentFilter }
-        }
-
-        binding.resultKeyword.text = currentQuery
-        binding.resultCount.text = getString(
-            R.string.search_result_count,
-            filtered.size,
-            currentFilter.label
-        )
 
         binding.resultListContainer.removeAllViews()
         filtered.forEachIndexed { index, item ->
@@ -251,25 +248,19 @@ class SearchActivity : AppCompatActivity() {
         }
     }
 
-    private fun showDefaultState() {
-        binding.defaultContent.isVisible = true
-        binding.suggestionContent.isVisible = false
-        binding.resultContent.isVisible = false
-        binding.voiceContainer.isVisible = true
+    private fun showState(mode: SearchScreenMode) {
+        binding.defaultContent.isVisible = mode == SearchScreenMode.DEFAULT
+        binding.suggestionContent.isVisible = mode == SearchScreenMode.SUGGESTION
+        binding.resultContent.isVisible = mode == SearchScreenMode.RESULT
+        binding.voiceContainer.isVisible = mode == SearchScreenMode.DEFAULT
     }
 
-    private fun showSuggestionState() {
-        binding.defaultContent.isVisible = false
-        binding.suggestionContent.isVisible = true
-        binding.resultContent.isVisible = false
-        binding.voiceContainer.isVisible = false
-    }
-
-    private fun showResultState() {
-        binding.defaultContent.isVisible = false
-        binding.suggestionContent.isVisible = false
-        binding.resultContent.isVisible = true
-        binding.voiceContainer.isVisible = false
+    private fun submitPresetQuery(query: String) {
+        isSyncingInput = true
+        binding.searchInput.setText(query)
+        binding.searchInput.setSelection(query.length)
+        isSyncingInput = false
+        viewModel.submitSearch(query)
     }
 
     private fun createHistoryChip(text: String, isFirst: Boolean): View {
@@ -287,21 +278,21 @@ class SearchActivity : AppCompatActivity() {
             this.text = text
             textSize = 14f
             setTextColor(color(R.color.xhs_search_text_secondary))
-            setOnClickListener { submitSearch(text) }
+            setOnClickListener { viewModel.submitSearch(text) }
         }
     }
 
-    private fun createGuessItemView(item: GuessItem): View {
+    private fun createGuessItemView(item: SearchGuessItem): View {
         return AppCompatTextView(this).apply {
             text = item.title
             textSize = 14f
             setTextColor(color(R.color.xhs_search_text_secondary))
             setLineSpacing(0f, 1.2f)
-            setOnClickListener { submitSearch(item.title) }
+            setOnClickListener { viewModel.submitSearch(item.title) }
         }
     }
 
-    private fun createSuggestionRow(item: GuessItem, isLast: Boolean): View {
+    private fun createSuggestionRow(item: SearchGuessItem, isLast: Boolean): View {
         return LinearLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -309,7 +300,7 @@ class SearchActivity : AppCompatActivity() {
             )
             gravity = Gravity.CENTER_VERTICAL
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(12), 0, dp(12))
+            setPadding(0, dp(12), 0, if (isLast) dp(12) else dp(12))
 
             addView(ImageView(context).apply {
                 layoutParams = LinearLayout.LayoutParams(dp(16), dp(16))
@@ -346,7 +337,7 @@ class SearchActivity : AppCompatActivity() {
                 })
             })
 
-            setOnClickListener { submitSearch(item.title) }
+            setOnClickListener { viewModel.submitSearch(item.title) }
         }
     }
 
@@ -361,22 +352,24 @@ class SearchActivity : AppCompatActivity() {
             setPadding(dp(14), 0, dp(14), 0)
             text = filter.label
             textSize = 13f
-            setTypeface(typeface, if (filter == currentFilter) Typeface.BOLD else Typeface.NORMAL)
+            setTypeface(typeface, if (filter == latestState.currentFilter) Typeface.BOLD else Typeface.NORMAL)
             background = roundedDrawable(
-                if (filter == currentFilter) R.color.xhs_search_filter_selected_bg else android.R.color.transparent,
+                if (filter == latestState.currentFilter) {
+                    R.color.xhs_search_filter_selected_bg
+                } else {
+                    android.R.color.transparent
+                },
                 17f
             )
             setTextColor(
-                if (filter == currentFilter) {
+                if (filter == latestState.currentFilter) {
                     color(R.color.xhs_search_filter_selected_text)
                 } else {
                     color(R.color.xhs_search_hint_text)
                 }
             )
             setOnClickListener {
-                currentFilter = filter
-                renderResultTabs()
-                renderResults()
+                viewModel.changeFilter(filter)
             }
         }
     }
@@ -445,138 +438,6 @@ class SearchActivity : AppCompatActivity() {
         }
     }
 
-    private fun buildSuggestions(query: String): List<GuessItem> {
-        val localMatches = (historyItems.map { GuessItem(it, "最近搜过") } + guessItems)
-            .distinctBy { it.title }
-            .filter { it.title.contains(query, ignoreCase = true) }
-
-        if (localMatches.isNotEmpty()) {
-            return localMatches.take(6)
-        }
-
-        return listOf(
-            GuessItem(query, "直接搜索"),
-            GuessItem("${query}攻略", "相关笔记"),
-            GuessItem("${query}测评", "近期热门"),
-            GuessItem("${query}同款", "商品和搭配"),
-            GuessItem("${query}合集", "高收藏内容"),
-            GuessItem("${query}避雷", "经验分享")
-        )
-    }
-
-    private fun resultsForQuery(query: String): List<SearchResultItem> {
-        val lowerQuery = query.lowercase()
-        return when {
-            query.contains("张元英") -> listOf(
-                SearchResultItem(
-                    ResultFilter.USERS,
-                    "张元英",
-                    "IVE 成员，舞台直拍、妆造解析、同款穿搭都在持续更新",
-                    "231.6 万人正在看相关内容",
-                    "用户",
-                    R.color.xhs_search_quick_action_icon_bg
-                ),
-                SearchResultItem(
-                    ResultFilter.NOTES,
-                    "张元英妆容拆解，普通人怎么画更日常",
-                    "从底妆、腮红到唇色顺着复刻，附平价替代清单",
-                    "2.8 万收藏 · 昨天更新",
-                    "笔记",
-                    R.color.xhs_search_chip_bg
-                ),
-                SearchResultItem(
-                    ResultFilter.TOPICS,
-                    "张元英多高？比例、站姿和镜头感为什么这么强",
-                    "把身高、头身比和拍照姿势放在一起讲明白",
-                    "热议话题 · 6421 条讨论",
-                    "话题",
-                    R.color.xhs_search_hot_rank_bg
-                )
-            )
-
-            query.contains("数码") || lowerQuery.contains("digital") -> listOf(
-                SearchResultItem(
-                    ResultFilter.NOTES,
-                    "2026 上半年数码好物清单",
-                    "耳机、相机、平板和桌搭配件按预算分档整理",
-                    "1.4 万收藏 · 本周热门",
-                    "笔记",
-                    R.color.xhs_search_chip_bg
-                ),
-                SearchResultItem(
-                    ResultFilter.GOODS,
-                    "学生党数码配件避坑合集",
-                    "从充电头到扩展坞，把不值得买的都先排掉",
-                    "商品攻略 · 9800 人已浏览",
-                    "商品",
-                    R.color.xhs_search_quick_action_icon_bg
-                ),
-                SearchResultItem(
-                    ResultFilter.USERS,
-                    "数码研究所",
-                    "专注手机、平板、电脑真实体验和横评",
-                    "优质博主 · 89.2 万粉丝",
-                    "用户",
-                    R.color.xhs_search_hot_rank_bg
-                )
-            )
-
-            query.contains("横店") || query.contains("群演") -> listOf(
-                SearchResultItem(
-                    ResultFilter.NOTES,
-                    "横店群演一天到底怎么过",
-                    "从接戏、候场到收工，把真实流程按时间线写清楚",
-                    "体验分享 · 1.1 万收藏",
-                    "笔记",
-                    R.color.xhs_search_chip_bg
-                ),
-                SearchResultItem(
-                    ResultFilter.TOPICS,
-                    "长得特别漂亮的群演会更容易被看到吗",
-                    "现场经验、导演视角和实际机会都有人在聊",
-                    "话题讨论 · 3890 条内容",
-                    "话题",
-                    R.color.xhs_search_hot_rank_bg
-                ),
-                SearchResultItem(
-                    ResultFilter.USERS,
-                    "横店日常观察员",
-                    "长期更新群演、剧组氛围和入行建议",
-                    "用户主页 · 12.8 万粉丝",
-                    "用户",
-                    R.color.xhs_search_quick_action_icon_bg
-                )
-            )
-
-            else -> listOf(
-                SearchResultItem(
-                    ResultFilter.NOTES,
-                    "$query 入门攻略",
-                    "把常见问题、路线和注意点整理成一篇就能看懂的版本",
-                    "综合热度最高 · 6 小时前更新",
-                    "笔记",
-                    R.color.xhs_search_chip_bg
-                ),
-                SearchResultItem(
-                    ResultFilter.TOPICS,
-                    "$query 为什么最近突然火了",
-                    "从平台趋势、真实体验和热度来源三个角度梳理",
-                    "话题讨论 · 2104 条内容",
-                    "话题",
-                    R.color.xhs_search_hot_rank_bg
-                ),
-                SearchResultItem(
-                    ResultFilter.USERS,
-                    "$query 研究社",
-                    "持续分享和 $query 相关的高质量内容与合集",
-                    "优质账号推荐 · 今日活跃",
-                    "用户",
-                    R.color.xhs_search_quick_action_icon_bg
-                )
-            )
-        }
-    }
-
     private fun roundedDrawable(colorRes: Int, radiusDp: Float): GradientDrawable {
         return GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
@@ -588,26 +449,4 @@ class SearchActivity : AppCompatActivity() {
     private fun color(colorRes: Int): Int = ContextCompat.getColor(this, colorRes)
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-
-    private data class GuessItem(
-        val title: String,
-        val meta: String
-    )
-
-    private data class SearchResultItem(
-        val filter: ResultFilter,
-        val title: String,
-        val subtitle: String,
-        val meta: String,
-        val badge: String,
-        val badgeColorRes: Int
-    )
-
-    private enum class ResultFilter(val label: String) {
-        ALL("综合"),
-        NOTES("笔记"),
-        USERS("用户"),
-        TOPICS("话题"),
-        GOODS("商品")
-    }
 }

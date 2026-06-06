@@ -2,6 +2,7 @@ package com.zhengyang.redbook.data.repository
 
 import com.zhengyang.redbook.data.local.ListDao
 import com.zhengyang.redbook.data.local.LocalSeedInitializer
+import com.zhengyang.redbook.data.local.AssetSeedDataSource
 import com.zhengyang.redbook.data.model.MessageRowEntity
 import com.zhengyang.redbook.data.model.PersonSuggestionEntity
 import com.zhengyang.redbook.ui.message.MessageRowItem
@@ -10,7 +11,8 @@ import javax.inject.Inject
 
 class MessageRepositoryImpl @Inject constructor(
     private val listDao: ListDao,
-    private val localSeedInitializer: LocalSeedInitializer
+    private val localSeedInitializer: LocalSeedInitializer,
+    private val assetSeedDataSource: AssetSeedDataSource
 ) : MessageRepository {
     override suspend fun getMessageRows(): List<MessageRowItem> {
         localSeedInitializer.ensureSeeded()
@@ -18,8 +20,7 @@ class MessageRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getPeopleSuggestions(): List<PersonSuggestionItem> {
-        localSeedInitializer.ensureSeeded()
-        return listDao.getPersonSuggestions().map { it.toPersonSuggestionItem() }
+        return assetSeedDataSource.load().personSuggestions.map { it.toPersonSuggestionItem() }
     }
 
     private fun MessageRowEntity.toMessageRowItem(): MessageRowItem {

@@ -2,6 +2,7 @@ package com.zhengyang.redbook.data.repository
 
 import com.zhengyang.redbook.data.local.ListDao
 import com.zhengyang.redbook.data.local.LocalSeedInitializer
+import com.zhengyang.redbook.data.local.AssetSeedDataSource
 import com.zhengyang.redbook.data.model.DiscoverCategoryEntity
 import com.zhengyang.redbook.data.model.FollowingUserEntity
 import com.zhengyang.redbook.data.model.HomeCardEntity
@@ -18,7 +19,8 @@ class HomeRepositoryImpl @Inject constructor(
     private val httpService: ListContentApiService,
     private val remoteNoteMapper: RemoteNoteMapper,
     private val localDataService: ListDao,
-    private val localSeedInitializer: LocalSeedInitializer
+    private val localSeedInitializer: LocalSeedInitializer,
+    private val assetSeedDataSource: AssetSeedDataSource
 ) : HomeRepository {
 
     override suspend fun getListContent(): List<NoteItem> {
@@ -49,8 +51,7 @@ class HomeRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getSuggestedFollowingUsers(): List<FollowingUserItem> {
-        localSeedInitializer.ensureSeeded()
-        return localDataService.getFollowingUsers().map { it.toFollowingUserItem() }
+        return assetSeedDataSource.load().followingUsers.map { it.toFollowingUserItem() }
     }
 
     override suspend fun getFollowingFeedItems(): List<HomeCardItem> {

@@ -7,7 +7,12 @@ import androidx.room.PrimaryKey
 data class MyProfileEntity(
     @PrimaryKey
     val id: String = "self",
-    val followingCount: String,
-    val fansCount: String,
-    val likesCount: String
+    val name: String,
+    val avatarText: String,
+    val avatarColorHex: String,
+    val bio: String?,
+    val followingCount: Int,
+    val fansCount: Int,
+    val likesCount: Int,
+    val noteCount: Int
 )

@@ -7,13 +7,11 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.zhengyang.redbook.data.model.DiscoverCategoryEntity
-import com.zhengyang.redbook.data.model.FollowingUserEntity
 import com.zhengyang.redbook.data.model.HomeCardEntity
-import com.zhengyang.redbook.data.model.InterestPersonEntity
 import com.zhengyang.redbook.data.model.MessageRowEntity
 import com.zhengyang.redbook.data.model.MyProfileEntity
 import com.zhengyang.redbook.data.model.NoteItem
-import com.zhengyang.redbook.data.model.PersonSuggestionEntity
+import com.zhengyang.redbook.data.model.SearchHistoryEntity
 
 @Dao
 interface ListDao {
@@ -47,15 +45,6 @@ interface ListDao {
     @Query("SELECT COUNT(*) FROM home_card")
     suspend fun getHomeCardCount(): Int
 
-    @Query("SELECT * FROM following_user ORDER BY sortOrder")
-    suspend fun getFollowingUsers(): List<FollowingUserEntity>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertFollowingUsers(items: List<FollowingUserEntity>)
-
-    @Query("SELECT COUNT(*) FROM following_user")
-    suspend fun getFollowingUserCount(): Int
-
     @Query("SELECT * FROM message_row ORDER BY sortOrder")
     suspend fun getMessageRows(): List<MessageRowEntity>
 
@@ -64,15 +53,6 @@ interface ListDao {
 
     @Query("SELECT COUNT(*) FROM message_row")
     suspend fun getMessageRowCount(): Int
-
-    @Query("SELECT * FROM person_suggestion ORDER BY sortOrder")
-    suspend fun getPersonSuggestions(): List<PersonSuggestionEntity>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertPersonSuggestions(items: List<PersonSuggestionEntity>)
-
-    @Query("SELECT COUNT(*) FROM person_suggestion")
-    suspend fun getPersonSuggestionCount(): Int
 
     @Query("SELECT * FROM my_profile WHERE id = 'self' LIMIT 1")
     suspend fun getMyProfile(): MyProfileEntity?
@@ -83,12 +63,12 @@ interface ListDao {
     @Query("SELECT COUNT(*) FROM my_profile")
     suspend fun getMyProfileCount(): Int
 
-    @Query("SELECT * FROM interest_person ORDER BY sortOrder")
-    suspend fun getInterestPeople(): List<InterestPersonEntity>
+    @Query("SELECT * FROM search_history ORDER BY updatedAt DESC LIMIT :limit")
+    suspend fun getSearchHistory(limit: Int): List<SearchHistoryEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertInterestPeople(items: List<InterestPersonEntity>)
+    suspend fun insertSearchHistory(item: SearchHistoryEntity)
 
-    @Query("SELECT COUNT(*) FROM interest_person")
-    suspend fun getInterestPersonCount(): Int
+    @Query("DELETE FROM search_history")
+    suspend fun clearSearchHistory()
 }

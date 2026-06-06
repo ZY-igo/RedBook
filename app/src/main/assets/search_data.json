@@ -1,0 +1,26 @@
+{
+  "searchGuesses": [
+    { "id": "guess_digital", "title": "数码", "meta": "近期热搜上升", "sortOrder": 0 },
+    { "id": "guess_wonyoung", "title": "张元英", "meta": "人气热搜词", "sortOrder": 1 },
+    { "id": "guess_hengdian", "title": "横店群演", "meta": "体验类内容增长", "sortOrder": 2 },
+    { "id": "guess_short_drama", "title": "短剧", "meta": "近期讨论升温", "sortOrder": 3 },
+    { "id": "guess_folding", "title": "100种折纸方法大全", "meta": "教程收藏飙升", "sortOrder": 4 },
+    { "id": "guess_valley", "title": "欢乐谷实景演绎体验", "meta": "周末出游热门", "sortOrder": 5 },
+    { "id": "guess_beauty_extra", "title": "长得特别漂亮的群演", "meta": "话题讨论增长", "sortOrder": 6 },
+    { "id": "guess_wonyoung_height", "title": "张元英多高", "meta": "百科类搜索走高", "sortOrder": 7 }
+  ],
+  "searchResults": [
+    { "id": "wonyoung_user", "keyword": "wonyoung", "matchTokens": "张元英,ive,wonyoung", "filter": "USERS", "title": "张元英", "subtitle": "IVE 成员，舞台直拍、妆造解析、同款穿搭持续更新", "meta": "231.6 万人正在看相关内容", "badge": "用户", "badgeColorResName": "xhs_search_quick_action_icon_bg", "sortOrder": 0 },
+    { "id": "wonyoung_note", "keyword": "wonyoung", "matchTokens": "张元英,妆容,wonyoung", "filter": "NOTES", "title": "张元英妆容拆解，普通人怎么画更日常", "subtitle": "从底妆、腮红到唇色顺着复刻，附平价替代清单", "meta": "2.8 万收藏 · 昨天更新", "badge": "笔记", "badgeColorResName": "xhs_search_chip_bg", "sortOrder": 1 },
+    { "id": "wonyoung_topic", "keyword": "wonyoung", "matchTokens": "张元英,身高,比例,wonyoung", "filter": "TOPICS", "title": "张元英多高？比例、站姿和镜头感为什么这么强", "subtitle": "把身高、头身比和拍照姿势放在一起讲明白", "meta": "热议话题 · 6421 条讨论", "badge": "话题", "badgeColorResName": "xhs_search_hot_rank_bg", "sortOrder": 2 },
+    { "id": "digital_note", "keyword": "digital", "matchTokens": "数码,digital,耳机,相机,平板", "filter": "NOTES", "title": "2026 上半年数码好物清单", "subtitle": "耳机、相机、平板和桌搭配件按预算分档整理", "meta": "1.4 万收藏 · 本周热门", "badge": "笔记", "badgeColorResName": "xhs_search_chip_bg", "sortOrder": 0 },
+    { "id": "digital_goods", "keyword": "digital", "matchTokens": "数码,digital,配件,学生党", "filter": "GOODS", "title": "学生党数码配件避坑合集", "subtitle": "从充电头到扩展坞，先把不值得买的筛掉", "meta": "商品攻略 · 9800 人已浏览", "badge": "商品", "badgeColorResName": "xhs_search_quick_action_icon_bg", "sortOrder": 1 },
+    { "id": "digital_user", "keyword": "digital", "matchTokens": "数码,digital,测评", "filter": "USERS", "title": "数码研究所", "subtitle": "专注手机、平板、电脑的真实体验和横评", "meta": "优质博主 · 89.2 万粉丝", "badge": "用户", "badgeColorResName": "xhs_search_hot_rank_bg", "sortOrder": 2 },
+    { "id": "hengdian_note", "keyword": "hengdian", "matchTokens": "横店,群演,横店群演", "filter": "NOTES", "title": "横店群演一天到底怎么过", "subtitle": "从接戏、候场到收工，把真实流程按时间线写清楚", "meta": "体验分享 · 1.1 万收藏", "badge": "笔记", "badgeColorResName": "xhs_search_chip_bg", "sortOrder": 0 },
+    { "id": "hengdian_topic", "keyword": "hengdian", "matchTokens": "横店,群演,漂亮群演", "filter": "TOPICS", "title": "长得特别漂亮的群演会更容易被看到吗", "subtitle": "现场经验、导演视角和实际机会都有人在聊", "meta": "话题讨论 · 3890 条内容", "badge": "话题", "badgeColorResName": "xhs_search_hot_rank_bg", "sortOrder": 1 },
+    { "id": "hengdian_user", "keyword": "hengdian", "matchTokens": "横店,群演,剧组", "filter": "USERS", "title": "横店日常观察员", "subtitle": "长期更新群演、剧组氛围和入行建议", "meta": "用户主页 · 12.8 万粉丝", "badge": "用户", "badgeColorResName": "xhs_search_quick_action_icon_bg", "sortOrder": 2 },
+    { "id": "default_note", "keyword": "default", "matchTokens": "", "filter": "NOTES", "title": "入门攻略合集", "subtitle": "整理常见问题、路线和注意事项，适合快速上手", "meta": "综合热度最高 · 持续更新", "badge": "笔记", "badgeColorResName": "xhs_search_chip_bg", "sortOrder": 0 },
+    { "id": "default_topic", "keyword": "default", "matchTokens": "", "filter": "TOPICS", "title": "热门讨论话题", "subtitle": "从平台趋势、真实体验和热度来源梳理讨论脉络", "meta": "话题讨论 · 今日活跃", "badge": "话题", "badgeColorResName": "xhs_search_hot_rank_bg", "sortOrder": 1 },
+    { "id": "default_user", "keyword": "default", "matchTokens": "", "filter": "USERS", "title": "优质账号推荐", "subtitle": "持续分享高质量内容与相关合集", "meta": "优质账号推荐 · 今日活跃", "badge": "用户", "badgeColorResName": "xhs_search_quick_action_icon_bg", "sortOrder": 2 }
+  ]
+}

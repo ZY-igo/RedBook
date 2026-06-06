@@ -11,6 +11,8 @@ import com.zhengyang.redbook.data.repository.MessageRepository
 import com.zhengyang.redbook.data.repository.MessageRepositoryImpl
 import com.zhengyang.redbook.data.repository.MyRepository
 import com.zhengyang.redbook.data.repository.MyRepositoryImpl
+import com.zhengyang.redbook.data.repository.SearchRepository
+import com.zhengyang.redbook.data.repository.SearchRepositoryImpl
 import android.app.Application
 import androidx.room.Room
 import dagger.Module
@@ -86,4 +88,10 @@ object AppModule {
     fun provideMyRepository(
         myRepositoryImpl: MyRepositoryImpl
     ): MyRepository = myRepositoryImpl
+
+    @Provides
+    @Singleton
+    fun provideSearchRepository(
+        searchRepositoryImpl: SearchRepositoryImpl
+    ): SearchRepository = searchRepositoryImpl
 }

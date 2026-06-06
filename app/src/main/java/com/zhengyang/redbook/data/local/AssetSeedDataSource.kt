@@ -88,9 +88,14 @@ class AssetSeedDataSource @Inject constructor(
             },
             myProfile = root.getJSONObject("myProfile").let { item ->
                 MyProfileEntity(
-                    followingCount = item.getString("followingCount"),
-                    fansCount = item.getString("fansCount"),
-                    likesCount = item.getString("likesCount")
+                    name = item.optString("name").ifEmpty { "小红薯用户" },
+                    avatarText = item.optString("avatarText").ifEmpty { "我" },
+                    avatarColorHex = item.optString("avatarColorHex").ifEmpty { "#FF8A9F" },
+                    bio = item.optString("bio").takeIf { it.isNotEmpty() },
+                    followingCount = item.optIntCompat("followingCount"),
+                    fansCount = item.optIntCompat("fansCount"),
+                    likesCount = item.optIntCompat("likesCount"),
+                    noteCount = item.optIntCompat("noteCount")
                 )
             },
             interestPeople = root.getJSONArray("interestPeople").map { item ->
@@ -112,6 +117,14 @@ class AssetSeedDataSource @Inject constructor(
 
     private fun <T> JSONArray.map(transform: (JSONObject) -> T): List<T> {
         return List(length()) { index -> transform(getJSONObject(index)) }
+    }
+
+    private fun JSONObject.optIntCompat(key: String): Int {
+        return when (val raw = opt(key)) {
+            is Number -> raw.toInt()
+            is String -> raw.toIntOrNull() ?: 0
+            else -> 0
+        }
     }
 
     companion object {

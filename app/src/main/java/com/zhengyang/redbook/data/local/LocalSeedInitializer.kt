@@ -16,20 +16,11 @@ class LocalSeedInitializer @Inject constructor(
         if (listDao.getHomeCardCount() == 0) {
             listDao.insertHomeCards(seed.homeCards)
         }
-        if (listDao.getFollowingUserCount() == 0) {
-            listDao.insertFollowingUsers(seed.followingUsers)
-        }
         if (listDao.getMessageRowCount() == 0) {
             listDao.insertMessageRows(seed.messageRows)
         }
-        if (listDao.getPersonSuggestionCount() == 0) {
-            listDao.insertPersonSuggestions(seed.personSuggestions)
-        }
         if (listDao.getMyProfileCount() == 0) {
             listDao.insertMyProfile(seed.myProfile)
-        }
-        if (listDao.getInterestPersonCount() == 0) {
-            listDao.insertInterestPeople(seed.interestPeople)
         }
     }
 }
