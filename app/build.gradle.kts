@@ -1,3 +1,6 @@
+// 文件说明： build.gradle.kts
+// 作用： 定义应用模块的构建方式、依赖、编译选项与打包规则。
+// 备注：该注释用于快速说明配置文件在构建、混淆或工程组织中的职责。
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)

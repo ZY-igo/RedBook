@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    文件说明： bg_xhs_profile_header_thumb.xml
+    作用： 定义可复用的 drawable 资源，例如形状、状态选择器、背景和矢量图标。
+    备注：该注释用于说明资源文件在界面结构、视觉表达或运行配置中的定位。
+-->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
     <gradient
         android:angle="270"

@@ -1,3 +1,8 @@
+/**
+ * 文件说明： MyFragment.kt
+ * 作用： 承载个人中心与资料页相关的界面状态与交互逻辑。
+ * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
+ */
 package com.zhengyang.redbook.ui.my
 
 import android.graphics.Color

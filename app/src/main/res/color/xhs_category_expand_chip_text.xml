@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    文件说明： xhs_category_expand_chip_text.xml
+    作用： 定义界面使用的颜色资源或颜色状态列表。
+    备注：该注释用于说明资源文件在界面结构、视觉表达或运行配置中的定位。
+-->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:color="@color/xhs_text_primary" android:state_selected="true" />
     <item android:color="@color/xhs_text_secondary" />

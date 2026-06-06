@@ -1,3 +1,6 @@
+# 文件说明： proguard-rules.pro
+# 作用： 定义代码压缩与混淆规则，控制发布构建中必须保留的类与成员。
+# 备注：该注释用于快速说明配置文件在构建、混淆或工程组织中的职责。
 # Add project specific ProGuard rules here.
 # You can control the set of applied configuration files using the
 # proguardFiles setting in build.gradle.

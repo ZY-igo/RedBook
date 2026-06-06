@@ -1,3 +1,8 @@
+/**
+ * 文件说明： MainActivity.kt
+ * 作用： 定义应用主入口 Activity，负责协调顶层导航切换。
+ * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
+ */
 package com.zhengyang.redbook
 
 import android.Manifest

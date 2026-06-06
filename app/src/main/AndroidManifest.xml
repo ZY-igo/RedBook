@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    文件说明： AndroidManifest.xml
+    作用： 声明 Android 组件、权限、主题以及其他应用级运行配置。
+    备注：该注释用于说明资源文件在界面结构、视觉表达或运行配置中的定位。
+-->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- 前台服务权限 -->

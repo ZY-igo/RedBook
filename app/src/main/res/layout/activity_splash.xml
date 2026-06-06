@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    文件说明： activity_splash.xml
+    作用： 定义界面布局层级结构，包括视图组织、尺寸关系和静态属性。
+    备注：该注释用于说明资源文件在界面结构、视觉表达或运行配置中的定位。
+-->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"

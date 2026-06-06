@@ -1,3 +1,8 @@
+/**
+ * 文件说明： SplashActivity.kt
+ * 作用： 定义当前源码文件的核心实现，承担对应功能模块中的结构声明或行为编排职责。
+ * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
+ */
 package com.zhengyang.redbook
 
 import android.content.Intent

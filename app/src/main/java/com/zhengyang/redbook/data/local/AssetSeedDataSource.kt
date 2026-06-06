@@ -1,3 +1,8 @@
+/**
+ * 文件说明： AssetSeedDataSource.kt
+ * 作用： 封装本地数据访问能力，例如 Room、预置资源读取和初始化逻辑。
+ * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
+ */
 package com.zhengyang.redbook.data.local
 
 import android.app.Application

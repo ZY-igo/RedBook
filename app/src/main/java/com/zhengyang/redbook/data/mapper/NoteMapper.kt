@@ -1,3 +1,8 @@
+/**
+ * 文件说明： NoteMapper.kt
+ * 作用： 负责不同层级模型之间的转换，保持映射逻辑集中且可复用。
+ * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
+ */
 package com.zhengyang.redbook.data.mapper
 
 import com.zhengyang.redbook.data.model.MediaType

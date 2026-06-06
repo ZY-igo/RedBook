@@ -1,3 +1,8 @@
+/**
+ * 文件说明： PublishLongFormActivity.kt
+ * 作用： 承载内容发布流程及其配套界面逻辑。
+ * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
+ */
 package com.zhengyang.redbook.ui.publish
 
 import android.content.Context

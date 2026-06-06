@@ -1,4 +1,9 @@
-﻿package com.zhengyang.redbook.ui.note
+/**
+ * 文件说明： NoteDetailActivity.kt
+ * 作用： 承载笔记详情展示、播放控制和相关界面行为。
+ * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
+ */
+package com.zhengyang.redbook.ui.note
 
 import android.content.Context
 import android.content.Intent

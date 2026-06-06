@@ -1,3 +1,8 @@
+<!--
+    文件说明： ic_launcher_foreground.xml
+    作用： 定义可复用的 drawable 资源，例如形状、状态选择器、背景和矢量图标。
+    备注：该注释用于说明资源文件在界面结构、视觉表达或运行配置中的定位。
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"

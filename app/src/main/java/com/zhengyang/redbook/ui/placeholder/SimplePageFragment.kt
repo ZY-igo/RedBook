@@ -1,3 +1,8 @@
+/**
+ * 文件说明： SimplePageFragment.kt
+ * 作用： 提供占位页面实现，用于补齐导航流程或演示界面。
+ * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
+ */
 package com.zhengyang.redbook.ui.placeholder
 
 import android.os.Bundle

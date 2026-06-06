@@ -1,3 +1,8 @@
+/**
+ * 文件说明： AppModule.kt
+ * 作用： 声明依赖注入绑定关系，并提供应用运行所需对象。
+ * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
+ */
 package com.zhengyang.redbook.di
 
 import com.zhengyang.redbook.data.local.ListDao

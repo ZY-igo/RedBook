@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    文件说明： bottom_nav_menu.xml
+    作用： 定义供导航栏或工具栏使用的菜单结构与菜单项配置。
+    备注：该注释用于说明资源文件在界面结构、视觉表达或运行配置中的定位。
+-->
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
 
     <item
