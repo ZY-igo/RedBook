@@ -1,4 +1,4 @@
-package com.zhengyang.redbook.service
+package com.zhengyang.redbook.worker
 
 import android.content.Context
 import androidx.work.CoroutineWorker

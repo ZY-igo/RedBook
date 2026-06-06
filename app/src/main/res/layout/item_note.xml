@@ -23,6 +23,50 @@
             android:layout_width="match_parent"
             android:layout_height="220dp">
 
+            <ImageView
+                android:id="@+id/ivCover"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="@null"
+                android:scaleType="centerCrop" />
+
+            <androidx.media3.ui.PlayerView
+                android:id="@+id/videoPlayerView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone"
+                app:hide_on_touch="false"
+                app:show_buffering="never"
+                app:show_timeout="0"
+                app:use_controller="false" />
+
+            <TextView
+                android:id="@+id/tvMediaBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|start"
+                android:layout_marginStart="10dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_xhs_note_badge"
+                android:paddingStart="8dp"
+                android:paddingTop="4dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="4dp"
+                android:textColor="@android:color/white"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <ImageView
+                android:id="@+id/ivPlayIndicator"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_gravity="center"
+                android:background="@drawable/bg_xhs_note_badge"
+                android:padding="8dp"
+                android:src="@drawable/ic_xhs_play"
+                android:visibility="gone"
+                app:tint="@android:color/white" />
+
         </FrameLayout>
 
         <LinearLayout

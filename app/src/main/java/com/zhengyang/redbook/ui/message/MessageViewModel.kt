@@ -1,12 +1,20 @@
 package com.zhengyang.redbook.ui.message
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.zhengyang.redbook.usecase.LoadMessageUiStateUseCase
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import javax.inject.Inject
 
-class MessageViewModel : ViewModel() {
+@HiltViewModel
+class MessageViewModel @Inject constructor(
+    private val loadMessageUiState: LoadMessageUiStateUseCase
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MessageUiState())
     val uiState: StateFlow<MessageUiState> = _uiState.asStateFlow()
@@ -16,11 +24,8 @@ class MessageViewModel : ViewModel() {
     }
 
     private fun loadMessageData() {
-        _uiState.update {
-            it.copy(
-                messageRows = MessageMockData.messageRows(),
-                peopleSuggestions = MessageMockData.peopleSuggestions()
-            )
+        viewModelScope.launch {
+            _uiState.value = loadMessageUiState()
         }
     }
 

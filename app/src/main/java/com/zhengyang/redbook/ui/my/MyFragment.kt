@@ -22,8 +22,10 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.zhengyang.redbook.R
 import com.zhengyang.redbook.databinding.FragmentMyBinding
 import com.zhengyang.redbook.databinding.LayoutMyInterestPersonBinding
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
+@AndroidEntryPoint
 class MyFragment : Fragment() {
 
     private var _binding: FragmentMyBinding? = null

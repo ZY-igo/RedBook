@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingTop="6dp">
+
+    <EditText
+        android:id="@+id/commentDialogInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@android:color/transparent"
+        android:gravity="top|start"
+        android:inputType="textCapSentences|textMultiLine"
+        android:minHeight="120dp"
+        android:minLines="4"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:textColor="#FF1F2329"
+        android:textColorHint="#FF979EAA"
+        android:textSize="15sp" />
+
+    <TextView
+        android:id="@+id/commentDialogImageButton"
+        android:layout_width="wrap_content"
+        android:layout_height="36dp"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/bg_xhs_search_bar"
+        android:drawablePadding="6dp"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:text="添加图片"
+        android:textColor="#FF1F2329"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:drawableStart="@drawable/ic_xhs_camera" />
+
+    <FrameLayout
+        android:id="@+id/commentDialogImagePreviewContainer"
+        android:layout_width="120dp"
+        android:layout_height="156dp"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/bg_xhs_search_bar"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/commentDialogImagePreview"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop" />
+
+        <ImageView
+            android:id="@+id/commentDialogRemoveImage"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_gravity="top|end"
+            android:layout_margin="6dp"
+            android:background="@drawable/bg_xhs_comment_sort_button"
+            android:padding="7dp"
+            android:src="@drawable/ic_xhs_close_small"
+            android:tint="@android:color/white" />
+    </FrameLayout>
+</LinearLayout>

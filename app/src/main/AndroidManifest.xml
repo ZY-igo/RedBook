@@ -6,6 +6,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
@@ -39,6 +40,12 @@
             android:theme="@style/Theme.RedBook.Search" />
 
         <activity
+            android:name=".ui.note.NoteDetailActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden"
+            android:exported="false"
+            android:theme="@style/Theme.RedBook" />
+
+        <activity
             android:name=".ui.publish.PublishLongFormActivity"
             android:exported="false"
             android:theme="@style/Theme.RedBook" />
@@ -64,10 +71,10 @@
         </activity>
 
         <service
-            android:name=".service.NotificationService"
+            android:name=".service.foreground.NotificationService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="mediaPlayback" />
 
         <receiver
             android:name=".broadcast.MyBroadcastReceiver"

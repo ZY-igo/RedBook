@@ -18,8 +18,10 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.zhengyang.redbook.databinding.FragmentMessageBinding
 import com.zhengyang.redbook.databinding.LayoutMessagePersonRowBinding
 import com.zhengyang.redbook.databinding.LayoutMessageRowBinding
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
+@AndroidEntryPoint
 class MessageFragment : Fragment() {
 
     private var _binding: FragmentMessageBinding? = null

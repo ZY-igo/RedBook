@@ -24,6 +24,10 @@ import androidx.core.view.postDelayed
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.doOnAttach
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.StaggeredGridLayoutManager
@@ -31,101 +35,45 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.drawerlayout.widget.DrawerLayout
 import com.zhengyang.redbook.R
 import com.zhengyang.redbook.databinding.FragmentHomeBinding
-import com.zhengyang.redbook.ui.home.HomeMockData.DiscoverCategory
-import com.zhengyang.redbook.ui.home.HomeMockData.FollowingUser
+import com.zhengyang.redbook.ui.note.NoteDetailActivity
 import com.zhengyang.redbook.ui.search.SearchActivity
 import com.zhengyang.redbook.utils.dpToPx
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 
+/**
+ * 首页 Fragment
+ * 包含三个顶部标签页：关注、发现、附近
+ * 支持频道切换、侧边栏、下拉刷新等功能
+ */
+@AndroidEntryPoint
 class HomeFragment : Fragment() {
 
+    // ViewBinding 只在 onCreateView 到 onDestroyView 之间有效。
     private var _binding: FragmentHomeBinding? = null
     private val binding get() = _binding!!
+    private val viewModel: HomeViewModel by viewModels()
 
+    // 发现页与关注页分别维护各自的列表适配器，避免相互污染展示状态。
     private val adapter = HomeAdapter()
     private val followingAdapter = HomeAdapter()
-    private val suggestedUsers = HomeMockData.suggestedFollowingUsers().toMutableList()
-    private val followingUsers = mutableListOf<FollowingUser>()
-    private val allChannels = listOf(
-        DiscoverCategory.RECOMMEND,
-        DiscoverCategory.RED,
-        DiscoverCategory.LIVE,
-        DiscoverCategory.DRAMA,
-        DiscoverCategory.TIPS,
-        DiscoverCategory.OUTFIT,
-        DiscoverCategory.FOOD,
-        DiscoverCategory.EMOTION,
-        DiscoverCategory.TRAVEL,
-        DiscoverCategory.PHOTO,
-        DiscoverCategory.CAR,
-        DiscoverCategory.DANCE,
-        DiscoverCategory.AVATAR,
-        DiscoverCategory.WALLPAPER,
-        DiscoverCategory.FUNNY,
-        DiscoverCategory.FITNESS,
-        DiscoverCategory.HOME,
-        DiscoverCategory.GROOMING,
-        DiscoverCategory.CAREER,
-        DiscoverCategory.MUSIC,
-        DiscoverCategory.RENOVATION,
-        DiscoverCategory.TECH,
-        DiscoverCategory.FILM,
-        DiscoverCategory.PAINTING,
-        DiscoverCategory.READING,
-        DiscoverCategory.STUDY,
-        DiscoverCategory.SNEAKERS,
-        DiscoverCategory.SCIENCE,
-        DiscoverCategory.GAME,
-        DiscoverCategory.ART,
-        DiscoverCategory.WEDDING,
-        DiscoverCategory.ANIME,
-        DiscoverCategory.CRAFT,
-        DiscoverCategory.FAT_LOSS,
-        DiscoverCategory.MOTOR,
-        DiscoverCategory.SPORTS,
-        DiscoverCategory.PET,
-        DiscoverCategory.CELEBRITY,
-        DiscoverCategory.CULTURE,
-        DiscoverCategory.SOCIAL,
-        DiscoverCategory.OUTDOOR,
-        DiscoverCategory.MOM_BABY,
-        DiscoverCategory.SKINCARE,
-        DiscoverCategory.PSYCHOLOGY,
-        DiscoverCategory.ESPORTS,
-        DiscoverCategory.VARIETY,
-        DiscoverCategory.TOYS,
-        DiscoverCategory.CAMPUS,
-        DiscoverCategory.CAMPING
-    )
-    private val myChannels = mutableListOf(
-        DiscoverCategory.RECOMMEND,
-        DiscoverCategory.RED,
-        DiscoverCategory.LIVE,
-        DiscoverCategory.DRAMA,
-        DiscoverCategory.TIPS,
-        DiscoverCategory.OUTFIT,
-        DiscoverCategory.FOOD,
-        DiscoverCategory.EMOTION,
-        DiscoverCategory.TRAVEL,
-        DiscoverCategory.PHOTO,
-        DiscoverCategory.CAR,
-        DiscoverCategory.DANCE,
-        DiscoverCategory.AVATAR,
-        DiscoverCategory.WALLPAPER,
-        DiscoverCategory.FUNNY,
-        DiscoverCategory.FITNESS,
-        DiscoverCategory.HOME,
-        DiscoverCategory.GROOMING,
-        DiscoverCategory.CAREER,
-        DiscoverCategory.MUSIC,
-        DiscoverCategory.RENOVATION,
-        DiscoverCategory.TECH,
-        DiscoverCategory.FILM,
-        DiscoverCategory.PAINTING,
-        DiscoverCategory.READING
-    )
-    private var currentCategory = DiscoverCategory.RECOMMEND
+
+    // 系统支持的全部频道，用于“更多频道”区域做补集展示。
+    private val allChannels = mutableListOf<DiscoverCategoryItem>()
+
+    // “我的频道”是用户当前顶部可见的频道集合，可增删、可重排展示区域。
+    private val myChannels = mutableListOf<DiscoverCategoryItem>()
+
+    // 当前发现页实际选中的频道。
+    private var currentCategory: DiscoverCategoryItem? = null
+
+    // 频道管理面板是否处于展开态。
     private var isCategoryExpanded = false
+
+    // 频道管理面板是否处于编辑模式。
     private var isChannelEditMode = false
+
+    // 顶部一级 Tab 当前选中项。
     private var currentTopTab = TopTab.DISCOVER
 
     override fun onCreateView(
@@ -139,15 +87,18 @@ class HomeFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        // 先完成所有静态 UI 与监听器初始化，再统一触发首次渲染。
         applySystemBarInsets()
         setupTopTabs()
         setupDrawer()
         setupRecyclerViews()
         setupCategoryTabs()
         setupFollowingPage()
+        collectUiState()
 
         binding.discoverRefreshLayout.setOnRefreshListener {
-            renderCategory(currentCategory)
+            currentCategory?.let(viewModel::refreshDiscover)
             binding.discoverRefreshLayout.postDelayed(720L) {
                 _binding?.discoverRefreshLayout?.setRefreshing(false)
             }
@@ -159,10 +110,16 @@ class HomeFragment : Fragment() {
         binding.buttonSearch.setOnClickListener {
             startActivity(Intent(requireContext(), SearchActivity::class.java))
         }
-        renderCategory(currentCategory)
         renderTopTab(currentTopTab)
     }
 
+    /**
+     * 处理沉浸式布局下的系统栏 inset。
+     * 这里分别修正：
+     * 1. 顶部栏的 topMargin，避免压到状态栏；
+     * 2. 抽屉内容区的顶部 padding，避免抽屉头部被遮挡；
+     * 3. 抽屉底部功能区的 bottom padding，避免被导航栏遮挡。
+     */
     private fun applySystemBarInsets() {
         val baseTopMargin = (binding.topBar.layoutParams as ViewGroup.MarginLayoutParams).topMargin
         ViewCompat.setOnApplyWindowInsetsListener(binding.topBar) { topBar, insets ->
@@ -199,6 +156,10 @@ class HomeFragment : Fragment() {
         binding.drawerFooter.doOnAttach { ViewCompat.requestApplyInsets(it) }
     }
 
+    /**
+     * 初始化顶部三个一级 Tab 的标题与点击事件。
+     * 这里只负责事件绑定，真正的视图切换由 renderTopTab 统一处理。
+     */
     private fun setupTopTabs() {
         binding.tabFollowing.text = getString(R.string.tab_following)
         binding.tabDiscover.text = getString(R.string.tab_discover)
@@ -209,6 +170,12 @@ class HomeFragment : Fragment() {
         binding.tabNearby.setOnClickListener { renderTopTab(TopTab.NEARBY) }
     }
 
+    /**
+     * 根据一级 Tab 切换页面主区域。
+     * FOLLOWING: 展示关注流/空态；
+     * DISCOVER: 展示当前已选频道；
+     * NEARBY: 这里复用发现流，并固定渲染为 TRAVEL 频道的内容。
+     */
     private fun renderTopTab(tab: TopTab) {
         currentTopTab = tab
         binding.tabFollowing.isSelected = tab == TopTab.FOLLOWING
@@ -221,18 +188,21 @@ class HomeFragment : Fragment() {
 
         if (!showDiscoverContent) {
             setCategoryExpanded(false, animate = false)
-            renderFollowingContent()
             return
         }
 
-        renderCategory(
-            when (tab) {
-                TopTab.NEARBY -> DiscoverCategory.TRAVEL
-                else -> currentCategory
-            }
-        )
+        // “附近”没有单独数据源，当前用旅行频道模拟其内容表现。
+        val targetCategory = when (tab) {
+            TopTab.NEARBY -> allChannels.firstOrNull { it.id == "travel" }
+            else -> currentCategory
+        }
+        targetCategory?.let(::renderCategory)
     }
 
+    /**
+     * 初始化侧边抽屉。
+     * 包括遮罩色、抽屉开关时的系统栏风格切换，以及各功能分组的文案/图标填充。
+     */
     private fun setupDrawer() {
         binding.drawerLayout.setScrimColor(requireContext().getColor(R.color.xhs_scrim))
         binding.drawerLayout.addDrawerListener(object : DrawerLayout.SimpleDrawerListener() {
@@ -284,6 +254,10 @@ class HomeFragment : Fragment() {
         updateSystemBarsForDrawer(isDrawerOpen = false)
     }
 
+    /**
+     * 抽屉打开时将系统栏背景切为抽屉底色，并关闭浅色图标；
+     * 抽屉关闭后恢复首页背景与浅色图标策略。
+     */
     private fun updateSystemBarsForDrawer(isDrawerOpen: Boolean) {
         val window = activity?.window ?: return
         val bgColor = requireContext().getColor(if (isDrawerOpen) R.color.xhs_drawer_bg else R.color.xhs_bg)
@@ -295,6 +269,7 @@ class HomeFragment : Fragment() {
         }
     }
 
+    // 将一组抽屉行模型按顺序映射到容器中已有的子 View。
     private fun configureDrawerSection(container: ViewGroup, rows: List<DrawerRowModel>) {
         rows.forEachIndexed { index, row ->
             val item = container.getChildAt(index) ?: return@forEachIndexed
@@ -307,6 +282,7 @@ class HomeFragment : Fragment() {
         }
     }
 
+    // 配置抽屉底部三个快捷入口。
     private fun configureFooter() {
         val labels = listOf(
             getString(R.string.drawer_scan),
@@ -325,30 +301,45 @@ class HomeFragment : Fragment() {
         }
     }
 
+    /**
+     * 初始化两个 RecyclerView。
+     * 发现页与关注页共用同一套卡片样式，但数据源、点击事件和布局状态彼此独立。
+     */
     private fun setupRecyclerViews() {
+        adapter.onItemClick = { item ->
+            startActivity(NoteDetailActivity.createIntent(requireContext(), item))
+        }
         binding.recyclerView.adapter = adapter
         binding.recyclerView.setHasFixedSize(false)
         if (binding.recyclerView.itemDecorationCount == 0) {
             binding.recyclerView.addItemDecoration(HomeSpacingDecoration())
         }
 
+        followingAdapter.onItemClick = { item ->
+            startActivity(NoteDetailActivity.createIntent(requireContext(), item))
+        }
         binding.followingRecyclerView.adapter = followingAdapter
         binding.followingRecyclerView.setHasFixedSize(false)
-        binding.followingRecyclerView.layoutManager = createLayoutManager(DiscoverCategory.RECOMMEND)
+        binding.followingRecyclerView.layoutManager = GridLayoutManager(requireContext(), 2)
         if (binding.followingRecyclerView.itemDecorationCount == 0) {
             binding.followingRecyclerView.addItemDecoration(HomeSpacingDecoration())
         }
     }
 
+    // 关注页下拉刷新只做本地重新渲染，延迟关闭刷新动画以模拟网络请求反馈。
     private fun setupFollowingPage() {
         binding.followingRefreshLayout.setOnRefreshListener {
-            renderFollowingContent()
+            viewModel.refreshFollowing()
             binding.followingRefreshLayout.postDelayed(720L) {
                 _binding?.followingRefreshLayout?.setRefreshing(false)
             }
         }
     }
 
+    /**
+     * 初始化频道栏与频道管理面板相关交互。
+     * 包括展开/收起、编辑模式切换，以及首帧的默认渲染。
+     */
     private fun setupCategoryTabs() {
         binding.categoryExpand.setOnClickListener {
             setCategoryExpanded(!isCategoryExpanded)
@@ -366,16 +357,62 @@ class HomeFragment : Fragment() {
         setCategoryExpanded(false, animate = false)
     }
 
-    private fun renderCategory(category: DiscoverCategory) {
+    /**
+     * 渲染当前频道对应的发现流内容。
+     * 每次切频道时都同步刷新顶部紧凑频道栏、展开面板选中态，以及列表布局管理器。
+     */
+    private fun renderCategory(category: DiscoverCategoryItem) {
         currentCategory = category
         renderCompactCategoryTabs()
         renderChannelManager()
         binding.recyclerView.layoutManager = createLayoutManager(category)
-        adapter.submitList(HomeMockData.itemsFor(category))
+        viewModel.refreshDiscover(category)
     }
 
-    private fun renderFollowingContent() {
-        val hasFollowing = followingUsers.isNotEmpty()
+    private fun collectUiState() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.uiState.collect(::renderHomeState)
+            }
+        }
+    }
+
+    private fun renderHomeState(state: HomeUiState) {
+        syncCategories(state.categories)
+        adapter.submitList(state.discoverItems)
+        renderFollowingContent(state)
+    }
+
+    private fun syncCategories(categories: List<DiscoverCategoryItem>) {
+        if (categories.isEmpty()) return
+
+        allChannels.clear()
+        allChannels.addAll(categories)
+
+        if (myChannels.isEmpty()) {
+            myChannels.addAll(categories.filter { it.isDefaultSelected })
+        } else {
+            val selectedIds = myChannels.map { it.id }.toSet()
+            myChannels.clear()
+            myChannels.addAll(categories.filter { it.id in selectedIds })
+            if (myChannels.isEmpty()) {
+                myChannels.addAll(categories.filter { it.isDefaultSelected })
+            }
+        }
+
+        val currentId = currentCategory?.id
+        currentCategory = myChannels.firstOrNull { it.id == currentId } ?: myChannels.firstOrNull()
+        renderCompactCategoryTabs()
+        renderChannelManager()
+    }
+
+    /**
+     * 渲染“关注”页主内容。
+     * 没有关注用户时显示空态与推荐关注；
+     * 有关注用户时显示顶部 stories 区域和下方 feed 列表。
+     */
+    private fun renderFollowingContent(state: HomeUiState) {
+        val hasFollowing = state.followingUsers.isNotEmpty()
         binding.followingEmptyContainer.visibility = if (hasFollowing) View.GONE else View.VISIBLE
         binding.followingFeedContainer.visibility = if (hasFollowing) View.VISIBLE else View.GONE
 
@@ -384,23 +421,30 @@ class HomeFragment : Fragment() {
             binding.followingEmptySubtitle.text = getString(R.string.home_following_empty_subtitle)
             binding.followingSuggestTitle.text = getString(R.string.home_following_suggest_title)
             binding.followingSuggestHint.text = getString(R.string.message_close)
-            renderFollowingSuggestions()
+            renderFollowingSuggestions(state.suggestedUsers)
             return
         }
 
-        renderFollowingStories()
-        followingAdapter.submitList(HomeMockData.followingFeedItems())
+        renderFollowingStories(state.followingUsers)
+        followingAdapter.submitList(state.followingFeedItems)
     }
 
-    private fun renderFollowingSuggestions() {
+    // 重新生成推荐关注卡片列表。这里直接移除并重建，逻辑简单且数据量小。
+    private fun renderFollowingSuggestions(users: List<FollowingUserItem>) {
         val container = binding.followingSuggestionContainer
         container.removeAllViews()
-        suggestedUsers.forEach { user ->
+        users.forEach { user ->
             container.addView(createFollowingSuggestionView(user))
         }
     }
 
-    private fun createFollowingSuggestionView(user: FollowingUser): View {
+    /**
+     * 动态创建单个“推荐关注”卡片。
+     * 右侧两个操作分别对应：
+     * 1. 关注该用户并将其迁移到 followingUsers；
+     * 2. 关闭该推荐，仅从推荐列表移除。
+     */
+    private fun createFollowingSuggestionView(user: FollowingUserItem): View {
         return LinearLayout(requireContext()).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -459,7 +503,7 @@ class HomeFragment : Fragment() {
                     setColor(Color.TRANSPARENT)
                 }
                 setOnClickListener {
-                    followUser(user)
+                    viewModel.followUser(user.id)
                 }
             })
 
@@ -471,16 +515,17 @@ class HomeFragment : Fragment() {
                 textSize = 16f
                 setTextColor(requireContext().getColor(R.color.xhs_text_secondary))
                 setOnClickListener {
-                    dismissSuggestion(user)
+                    viewModel.dismissSuggestion(user.id)
                 }
             })
         }
     }
 
-    private fun renderFollowingStories() {
+    // 渲染关注页顶部横向头像区，作为“已关注用户”的快速可视化入口。
+    private fun renderFollowingStories(users: List<FollowingUserItem>) {
         val container = binding.followingStoryContainer
         container.removeAllViews()
-        followingUsers.forEach { user ->
+        users.forEach { user ->
             container.addView(LinearLayout(requireContext()).apply {
                 layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -506,8 +551,13 @@ class HomeFragment : Fragment() {
         }
     }
 
+    /**
+     * 创建一个纯文本头像。
+     * 头像使用用户名首字 + 纯色圆形背景模拟，避免引入真实图片资源。
+     * compact=false 时会额外加描边，使其在 stories 场景里与背景分离得更清楚。
+     */
     private fun createAvatarView(
-        user: FollowingUser,
+        user: FollowingUserItem,
         sizeDp: Int,
         textSizeSp: Float,
         compact: Boolean
@@ -529,18 +579,10 @@ class HomeFragment : Fragment() {
         }
     }
 
-    private fun followUser(user: FollowingUser) {
-        if (followingUsers.any { it.id == user.id }) return
-        followingUsers.add(user)
-        suggestedUsers.removeAll { it.id == user.id }
-        renderFollowingContent()
-    }
-
-    private fun dismissSuggestion(user: FollowingUser) {
-        suggestedUsers.removeAll { it.id == user.id }
-        renderFollowingSuggestions()
-    }
-
+    /**
+     * 渲染顶部紧凑频道栏。
+     * 该区域只显示“我的频道”，用于快速切换内容分类。
+     */
     private fun renderCompactCategoryTabs() {
         val container = binding.compactCategoryContainer
         container.removeAllViews()
@@ -563,7 +605,7 @@ class HomeFragment : Fragment() {
                 setTextColor(textColors)
                 textSize = 14f
                 text = category.title
-                isSelected = category == currentCategory
+                isSelected = category.id == currentCategory?.id
                 setOnClickListener {
                     renderCategory(category)
                 }
@@ -571,6 +613,11 @@ class HomeFragment : Fragment() {
         }
     }
 
+    /**
+     * 渲染展开后的频道管理面板。
+     * 上半部分是“我的频道”，下半部分是“推荐频道”。
+     * 编辑模式下会同步切换按钮文案与提示语。
+     */
     private fun renderChannelManager() {
         binding.panelEditButton.text = if (isChannelEditMode) getString(R.string.home_channel_edit_done) else getString(R.string.home_channel_edit_enter)
         binding.myChannelHint.text = if (isChannelEditMode) getString(R.string.home_channel_hint_delete) else getString(R.string.home_channel_hint_enter)
@@ -582,9 +629,13 @@ class HomeFragment : Fragment() {
         )
     }
 
+    /**
+     * 将频道按每行 4 个进行网格化排布。
+     * 不足 4 个时补空白占位，保证整行宽度与间距稳定。
+     */
     private fun renderChannelGrid(
         container: LinearLayout,
-        channels: List<DiscoverCategory>,
+        channels: List<DiscoverCategoryItem>,
         isMyChannelSection: Boolean
     ) {
         container.removeAllViews()
@@ -616,8 +667,14 @@ class HomeFragment : Fragment() {
         }
     }
 
+    /**
+     * 创建频道管理面板中的单个频道项。
+     * “我的频道”在非编辑态下点击是切换频道；
+     * “推荐频道”点击是加入到我的频道；
+     * “我的频道”在编辑态下且允许删除时，会额外显示右上角删除徽标。
+     */
     private fun createChannelItemView(
-        category: DiscoverCategory,
+        category: DiscoverCategoryItem,
         isMyChannelSection: Boolean
     ): View {
         val wrapper = FrameLayout(requireContext()).apply {
@@ -639,7 +696,7 @@ class HomeFragment : Fragment() {
             setTextColor(requireContext().getColor(R.color.xhs_text_primary))
             background = AppCompatResources.getDrawable(
                 requireContext(),
-                if (isMyChannelSection && category == currentCategory && !isChannelEditMode) {
+                if (isMyChannelSection && category.id == currentCategory?.id && !isChannelEditMode) {
                     R.drawable.bg_xhs_channel_chip_selected
                 } else {
                     R.drawable.bg_xhs_channel_chip
@@ -658,6 +715,7 @@ class HomeFragment : Fragment() {
         }
         wrapper.addView(chip)
 
+        // 推荐频道不显示删除入口；默认频道“推荐”也不允许删除。
         if (isMyChannelSection && isChannelEditMode && canRemoveChannel(category)) {
             wrapper.addView(AppCompatTextView(requireContext()).apply {
                 layoutParams = FrameLayout.LayoutParams(dp(18), dp(18), Gravity.TOP or Gravity.END)
@@ -680,29 +738,39 @@ class HomeFragment : Fragment() {
         return wrapper
     }
 
-    private fun addChannel(category: DiscoverCategory) {
+    // 把频道加入“我的频道”，随后同步刷新顶部紧凑栏和展开面板。
+    private fun addChannel(category: DiscoverCategoryItem) {
         if (myChannels.contains(category)) return
         myChannels.add(category)
         renderCompactCategoryTabs()
         renderChannelManager()
     }
 
-    private fun removeChannel(category: DiscoverCategory) {
+    /**
+     * 从“我的频道”移除指定频道。
+     * 如果删除的是当前正在浏览的频道，则自动回退到剩余频道中的第一个，避免出现空选中态。
+     */
+    private fun removeChannel(category: DiscoverCategoryItem) {
         if (!canRemoveChannel(category)) return
-        val removedCurrent = currentCategory == category
+        val removedCurrent = currentCategory?.id == category.id
         myChannels.remove(category)
         if (removedCurrent) {
-            renderCategory(myChannels.first())
+            myChannels.firstOrNull()?.let(::renderCategory)
         } else {
             renderCompactCategoryTabs()
             renderChannelManager()
         }
     }
 
-    private fun canRemoveChannel(category: DiscoverCategory): Boolean {
-        return category != DiscoverCategory.RECOMMEND && myChannels.size > 1
+    // 至少保留一个频道，且默认“推荐”频道不可删除。
+    private fun canRemoveChannel(category: DiscoverCategoryItem): Boolean {
+        return category.id != "recommend" && myChannels.size > 1
     }
 
+    /**
+     * 控制频道管理面板的展开/收起状态，并处理箭头旋转与淡入淡出动画。
+     * 收起时如果仍处于编辑模式，会先退出编辑模式，保证下次展开回到普通浏览态。
+     */
     private fun setCategoryExpanded(expanded: Boolean, animate: Boolean = true) {
         val panelVisible = binding.categoryManagerPanel.visibility == View.VISIBLE
         if (expanded == isCategoryExpanded && panelVisible == expanded) return
@@ -716,6 +784,7 @@ class HomeFragment : Fragment() {
         binding.categoryExpand.animate().cancel()
         binding.categoryManagerPanel.animate().cancel()
 
+        // 展开时箭头朝上，收起时箭头恢复朝下。
         val rotationTarget = if (expanded) 180f else 0f
         if (animate) {
             binding.categoryExpand.animate()
@@ -727,6 +796,7 @@ class HomeFragment : Fragment() {
         }
 
         if (expanded) {
+            // 先把面板放到略微上移且透明的初始状态，再执行展开动画。
             binding.categoryManagerPanel.alpha = 0f
             binding.categoryManagerPanel.translationY = -dp(10).toFloat()
             binding.categoryManagerPanel.visibility = View.VISIBLE
@@ -741,6 +811,7 @@ class HomeFragment : Fragment() {
                 binding.categoryManagerPanel.translationY = 0f
             }
         } else if (animate) {
+            // 收起时动画结束再真正 GONE，避免动画过程中布局突然消失。
             binding.categoryManagerPanel.animate()
                 .alpha(0f)
                 .translationY(-dp(10).toFloat())
@@ -756,7 +827,12 @@ class HomeFragment : Fragment() {
         }
     }
 
-    private fun createLayoutManager(category: DiscoverCategory): RecyclerView.LayoutManager {
+    /**
+     * 根据频道的展示形式选择列表布局：
+     * usesWaterfall=true 使用瀑布流；
+     * 否则使用固定 2 列网格。
+     */
+    private fun createLayoutManager(category: DiscoverCategoryItem): RecyclerView.LayoutManager {
         return if (category.usesWaterfall) {
             StaggeredGridLayoutManager(2, StaggeredGridLayoutManager.VERTICAL).apply {
                 gapStrategy = StaggeredGridLayoutManager.GAP_HANDLING_MOVE_ITEMS_BETWEEN_SPANS
@@ -769,6 +845,9 @@ class HomeFragment : Fragment() {
     private fun dp(value: Int): Int = value.dpToPx()
 
     override fun onDestroyView() {
+        // 主动断开 adapter 对 View 的引用，减少 Fragment View 销毁后的持有风险。
+        binding.recyclerView.adapter = null
+        binding.followingRecyclerView.adapter = null
         super.onDestroyView()
         _binding = null
     }

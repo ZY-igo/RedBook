@@ -14,6 +14,7 @@
     <color name="xhs_text_primary">#1F2329</color>
     <color name="xhs_text_secondary">#878787</color>
     <color name="xhs_text_muted">#969AA0</color>
+    <color name="xhs_related_bar_stroke">#FFE8E9ED</color>
     <color name="xhs_divider">#1A1F2329</color>
     <color name="xhs_accent">#FF2442</color>
     <color name="xhs_accent_soft">#33FF2442</color>
@@ -23,6 +24,8 @@
     <color name="xhs_bottom_nav_surface">#FDFDFD</color>
     <color name="xhs_bottom_nav_stroke">#14000000</color>
     <color name="xhs_add_button_stroke">#1FFFFFFF</color>
+    <color name="xhs_comment_surface">#FFF7F7F8</color>
+    <color name="xhs_comment_panel">#FFF2F3F5</color>
     <color name="xhs_search_bg">#FFF7F7F8</color>
     <color name="xhs_search_panel_bg">#FFFFFFFF</color>
     <color name="xhs_search_bar_bg">#FFF0F1F4</color>

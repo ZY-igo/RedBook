@@ -8,13 +8,25 @@ import com.zhengyang.redbook.databinding.ItemNoteBinding
 
 class HomeAdapter : ListAdapter<HomeCardItem, HomeViewHolder>(HomeDiffCallback()) {
 
+    var onItemClick: ((HomeCardItem) -> Unit)? = null
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): HomeViewHolder {
         val binding = ItemNoteBinding.inflate(LayoutInflater.from(parent.context), parent, false)
         return HomeViewHolder(binding)
     }
 
     override fun onBindViewHolder(holder: HomeViewHolder, position: Int) {
-        holder.bind(getItem(position))
+        holder.bind(getItem(position), onItemClick)
+    }
+
+    override fun onViewRecycled(holder: HomeViewHolder) {
+        holder.recycle()
+        super.onViewRecycled(holder)
+    }
+
+    override fun onViewDetachedFromWindow(holder: HomeViewHolder) {
+        holder.onDetached()
+        super.onViewDetachedFromWindow(holder)
     }
 
     private class HomeDiffCallback : DiffUtil.ItemCallback<HomeCardItem>() {

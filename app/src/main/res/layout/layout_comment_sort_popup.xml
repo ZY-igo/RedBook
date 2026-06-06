@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="132dp"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_xhs_comment_sort_popup"
+    android:orientation="vertical"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp">
+
+    <LinearLayout
+        android:id="@+id/sortOptionDefault"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:foreground="?attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="14dp"
+        android:paddingEnd="12dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="默认"
+            android:textColor="@color/xhs_text_primary"
+            android:textSize="14sp" />
+
+        <ImageView
+            android:id="@+id/sortOptionDefaultCheck"
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:src="@drawable/ic_xhs_check"
+            app:tint="@color/xhs_accent" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/sortOptionLatest"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:foreground="?attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="14dp"
+        android:paddingEnd="12dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="最新"
+            android:textColor="@color/xhs_text_primary"
+            android:textSize="14sp" />
+
+        <ImageView
+            android:id="@+id/sortOptionLatestCheck"
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:src="@drawable/ic_xhs_check"
+            android:visibility="invisible"
+            app:tint="@color/xhs_accent" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/sortOptionLikes"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:foreground="?attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="14dp"
+        android:paddingEnd="12dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="最多点赞"
+            android:textColor="@color/xhs_text_primary"
+            android:textSize="14sp" />
+
+        <ImageView
+            android:id="@+id/sortOptionLikesCheck"
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:src="@drawable/ic_xhs_check"
+            android:visibility="invisible"
+            app:tint="@color/xhs_accent" />
+    </LinearLayout>
+</LinearLayout>

@@ -22,7 +22,9 @@ import com.zhengyang.redbook.ui.message.MessageFragment
 import com.zhengyang.redbook.ui.my.MyFragment
 import com.zhengyang.redbook.ui.placeholder.SimplePageFragment
 import com.zhengyang.redbook.ui.publish.PublishTextActivity
+import dagger.hilt.android.AndroidEntryPoint
 
+@AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding

@@ -1,38 +1,46 @@
 package com.zhengyang.redbook.data.remote
 
-import com.zhengyang.redbook.data.model.NoteItem
+import com.zhengyang.redbook.data.remote.model.RemoteNoteDto
+import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-class HttpService(
-    private val okHttpClient: OkHttpClient = defaultClient()
+class HttpService @Inject constructor(
+    private val okHttpClient: OkHttpClient,
+    private val remoteApiConfig: RemoteApiConfig,
+    private val responseParser: ListContentResponseParser,
+    private val mockFactory: RemoteNoteMockFactory
 ) : ListContentApiService {
-    override suspend fun getListContent(): List<NoteItem> {
-        return executeGetListContent(
-            Request.Builder()
-                .url(BASE_URL)
-                .get()
-                .build()
-        )
+
+    override suspend fun getListContent(): List<RemoteNoteDto> = withContext(Dispatchers.IO) {
+        if (remoteApiConfig.shouldUseMockData()) {
+            return@withContext mockFactory.create()
+        }
+        executeGetListContent(buildListContentRequest())
     }
 
-    private fun executeGetListContent(request: Request): List<NoteItem> {
-        return runCatching<List<NoteItem>> {
+    private fun buildListContentRequest(): Request {
+        val requestBuilder = Request.Builder()
+            .url(remoteApiConfig.baseUrl.newBuilder().addPathSegments(remoteApiConfig.listContentPath).build())
+            .get()
+
+        remoteApiConfig.defaultHeaders.forEach { (key, value) ->
+            requestBuilder.header(key, value)
+        }
+
+        return requestBuilder.build()
+    }
+
+    private fun executeGetListContent(request: Request): List<RemoteNoteDto> {
+        return runCatching {
             okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful || response.body == null) {
-                    emptyList<NoteItem>()
-                } else {
-                    emptyList<NoteItem>()
-                }
+                val responseBody = response.body?.string().orEmpty()
+                if (!response.isSuccessful) return@use mockFactory.create()
+
+                responseParser.parse(responseBody).ifEmpty { mockFactory.create() }
             }
-        }.getOrDefault(emptyList())
-    }
-
-    companion object {
-        private const val BASE_URL = "https://api.github.com/"
-
-        private fun defaultClient(): OkHttpClient =
-            OkHttpClient.Builder()
-                .build()
+        }.getOrElse { mockFactory.create() }
     }
 }

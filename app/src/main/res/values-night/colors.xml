@@ -23,6 +23,8 @@
     <color name="xhs_bottom_nav_surface">#111217</color>
     <color name="xhs_bottom_nav_stroke">#22FFFFFF</color>
     <color name="xhs_add_button_stroke">#33FFFFFF</color>
+    <color name="xhs_comment_surface">#FF14151A</color>
+    <color name="xhs_comment_panel">#FF24262D</color>
     <color name="xhs_search_bg">#19191F</color>
     <color name="xhs_search_panel_bg">#202028</color>
     <color name="xhs_search_bar_bg">#2B2B33</color>
