@@ -9,16 +9,26 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnAttach
 import androidx.core.view.updateLayoutParams
+import androidx.lifecycle.lifecycleScope
+import com.zhengyang.redbook.data.repository.PublishRepository
 import com.zhengyang.redbook.databinding.ActivityPublishLongFormBinding
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
+import kotlinx.coroutines.launch
 
+@AndroidEntryPoint
 class PublishLongFormActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityPublishLongFormBinding
+
+    @Inject
+    lateinit var publishRepository: PublishRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,6 +39,7 @@ class PublishLongFormActivity : AppCompatActivity() {
         binding.contentInput.setText(intent.getStringExtra(EXTRA_DRAFT_CONTENT).orEmpty())
 
         binding.buttonBack.setOnClickListener { finish() }
+        binding.actionButton.setOnClickListener { saveDraft() }
     }
 
     private fun applySystemBarInsets() {
@@ -52,6 +63,36 @@ class PublishLongFormActivity : AppCompatActivity() {
 
         binding.topBar.doOnAttach { ViewCompat.requestApplyInsets(it) }
         binding.actionButton.doOnAttach { ViewCompat.requestApplyInsets(it) }
+    }
+
+    private fun saveDraft() {
+        val title = binding.titleInput.text?.toString()?.trim().orEmpty()
+        val content = binding.contentInput.text?.toString()?.trim().orEmpty()
+        if (title.isBlank() && content.isBlank()) {
+            Toast.makeText(this, "请输入标题或正文", Toast.LENGTH_SHORT).show()
+            return
+        }
+        binding.actionButton.isEnabled = false
+        lifecycleScope.launch {
+            runCatching {
+                publishRepository.saveDraft(
+                    title = title.ifBlank { content.take(20) },
+                    content = content,
+                    mediaType = "LONG_FORM",
+                    autoSaved = false
+                )
+            }.onSuccess {
+                Toast.makeText(this@PublishLongFormActivity, "草稿已保存", Toast.LENGTH_SHORT).show()
+                finish()
+            }.onFailure { error ->
+                binding.actionButton.isEnabled = true
+                Toast.makeText(
+                    this@PublishLongFormActivity,
+                    error.message ?: "保存失败，请稍后重试",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
     }
 
     companion object {

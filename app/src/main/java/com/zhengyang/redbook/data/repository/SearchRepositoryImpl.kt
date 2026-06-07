@@ -1,24 +1,24 @@
-/**
- * 文件说明： SearchRepositoryImpl.kt
- * 作用： 协调不同数据源，并向上层提供统一的仓储实现。
- * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
- */
 package com.zhengyang.redbook.data.repository
 
 import com.zhengyang.redbook.R
 import com.zhengyang.redbook.data.local.ListDao
-import com.zhengyang.redbook.data.local.SearchSeedDataSource
-import com.zhengyang.redbook.data.model.SearchGuessEntity
 import com.zhengyang.redbook.data.model.SearchHistoryEntity
-import com.zhengyang.redbook.data.model.SearchResultEntity
+import com.zhengyang.redbook.data.remote.RedBookApiService
+import com.zhengyang.redbook.data.remote.RemoteResourceMapper
+import com.zhengyang.redbook.data.remote.requireData
+import com.zhengyang.redbook.data.remote.model.RemoteSearchGuessDto
+import com.zhengyang.redbook.data.remote.model.RemoteSearchResultDto
 import com.zhengyang.redbook.ui.search.ResultFilter
 import com.zhengyang.redbook.ui.search.SearchGuessItem
 import com.zhengyang.redbook.ui.search.SearchResultItem
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class SearchRepositoryImpl @Inject constructor(
     private val listDao: ListDao,
-    private val searchSeedDataSource: SearchSeedDataSource
+    private val apiService: RedBookApiService,
+    private val resourceMapper: RemoteResourceMapper
 ) : SearchRepository {
 
     override suspend fun getHistory(limit: Int): List<String> {
@@ -41,85 +41,40 @@ class SearchRepositoryImpl @Inject constructor(
         listDao.clearSearchHistory()
     }
 
-    override suspend fun getGuessItems(): List<SearchGuessItem> {
-        return searchSeedDataSource.load().searchGuesses
-            .sortedBy { it.sortOrder }
-            .map { it.toGuessItem() }
+    override suspend fun getGuessItems(): List<SearchGuessItem> = withContext(Dispatchers.IO) {
+        apiService.getSearchBootstrap().requireData().guessItems.map { it.toUiModel() }
     }
 
-    override suspend fun getSuggestions(query: String): List<SearchGuessItem> {
+    override suspend fun getSuggestions(query: String): List<SearchGuessItem> = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
-        if (trimmed.isEmpty()) return emptyList()
-
-        val suggestions = (getHistory().map { SearchGuessItem(it, "最近搜索") } + getGuessItems())
-            .distinctBy { it.title }
-            .filter { it.title.contains(trimmed, ignoreCase = true) }
-
-        return if (suggestions.isNotEmpty()) {
-            suggestions.take(6)
-        } else {
-            listOf(
-                SearchGuessItem(trimmed, "直接搜索"),
-                SearchGuessItem("${trimmed}攻略", "相关笔记"),
-                SearchGuessItem("${trimmed}测评", "近期热门"),
-                SearchGuessItem("${trimmed}同款", "商品和搭配"),
-                SearchGuessItem("${trimmed}合集", "高收藏内容"),
-                SearchGuessItem("${trimmed}避雷", "经验分享")
-            )
-        }
+        if (trimmed.isEmpty()) return@withContext emptyList()
+        apiService.getSearchSuggestions(trimmed).requireData().map { it.toUiModel() }
     }
 
-    override suspend fun getResults(query: String): List<SearchResultItem> {
+    override suspend fun getResults(query: String): List<SearchResultItem> = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
-        if (trimmed.isEmpty()) return emptyList()
-
-        val results = searchSeedDataSource.load().searchResults
-        val matchedKeyword = resolveKeyword(trimmed, results)
-        return results
-            .filter { it.keyword == matchedKeyword }
-            .sortedBy { it.sortOrder }
-            .map { it.toSearchResultItem() }
+        if (trimmed.isEmpty()) return@withContext emptyList()
+        apiService.getSearchResults(trimmed).requireData().map { it.toUiModel() }
     }
 
-    private fun resolveKeyword(
-        query: String,
-        results: List<SearchResultEntity>
-    ): String {
-        val normalized = query.lowercase()
-        val matched = results.firstOrNull { item ->
-            item.matchTokens.split(',')
-                .map { it.trim().lowercase() }
-                .filter { it.isNotEmpty() }
-                .any { token ->
-                    normalized.contains(token) || token.contains(normalized)
-                }
-        }
-        return matched?.keyword ?: DEFAULT_KEYWORD
-    }
-
-    private fun SearchGuessEntity.toGuessItem(): SearchGuessItem {
+    private fun RemoteSearchGuessDto.toUiModel(): SearchGuessItem {
         return SearchGuessItem(
             title = title,
             meta = meta
         )
     }
 
-    private fun SearchResultEntity.toSearchResultItem(): SearchResultItem {
+    private fun RemoteSearchResultDto.toUiModel(): SearchResultItem {
         return SearchResultItem(
             filter = ResultFilter.valueOf(filter),
             title = title,
             subtitle = subtitle,
             meta = meta,
             badge = badge,
-            badgeColorRes = when (badgeColorResName) {
-                "xhs_search_chip_bg" -> R.color.xhs_search_chip_bg
-                "xhs_search_hot_rank_bg" -> R.color.xhs_search_hot_rank_bg
-                else -> R.color.xhs_search_quick_action_icon_bg
-            }
+            badgeColorRes = resourceMapper.colorByName(
+                name = badgeColorKey,
+                fallback = R.color.xhs_search_quick_action_icon_bg
+            )
         )
-    }
-
-    private companion object {
-        const val DEFAULT_KEYWORD = "default"
     }
 }

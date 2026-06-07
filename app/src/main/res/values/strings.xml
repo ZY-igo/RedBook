@@ -140,6 +140,10 @@
     <string name="home_channel_hint_delete">点击右上角删除频道</string>
     <string name="home_channel_hint_enter">点击进入频道</string>
     <string name="home_channel_hint_add">点击添加频道</string>
+    <string name="home_channel_tab_cd">打开%1$s频道</string>
+    <string name="home_channel_tab_selected_cd">%1$s频道，当前已选中</string>
+    <string name="home_channel_add_cd">添加%1$s频道</string>
+    <string name="home_channel_remove_cd">移除%1$s频道</string>
     <string name="notification_channel_name">数据同步</string>
     <string name="notification_channel_description">前台同步通知</string>
     <string name="notification_title">正在同步数据</string>
@@ -164,6 +168,7 @@
     <string name="note_detail_playback_failed">视频播放失败，请点击重试</string>
     <string name="note_detail_video_unavailable">视频资源暂时不可用，请稍后重试</string>
     <string name="note_detail_network_lost">当前网络不可用，请检查连接后重试</string>
+    <string name="app_recovered_from_crash">应用上次异常退出，已重新恢复启动</string>
     <string name="note_detail_network_connect_failed">网络连接失败，请稍后重试</string>
     <string name="note_detail_metered_network_hint">当前为移动网络，请注意流量消耗</string>
     <string name="note_detail_video_status_buffering">缓冲中...</string>

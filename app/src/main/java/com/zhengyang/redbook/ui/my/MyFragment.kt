@@ -6,6 +6,7 @@
 package com.zhengyang.redbook.ui.my
 
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -120,6 +121,15 @@ class MyFragment : Fragment() {
     }
 
     private fun render(state: MyUiState) {
+        binding.profileNameText.text = state.profile.name
+        binding.profileUserIdText.text = "小红书号: ${state.profile.id}"
+        binding.profileAvatarText.text = state.profile.avatarText
+        binding.topBarAvatar.text = state.profile.avatarText
+        binding.profileBioText.text = state.profile.bio?.takeIf { it.isNotBlank() }
+            ?: getString(R.string.me_no_bio)
+        val avatarBackground = createAvatarBackground(state.profile.avatarColorHex)
+        binding.profileAvatarText.background = avatarBackground
+        binding.topBarAvatar.background = createAvatarBackground(state.profile.avatarColorHex)
         binding.followingCountText.text = state.stats.followingCount
         binding.fansCountText.text = state.stats.fansCount
         binding.likesCountText.text = state.stats.likesCount
@@ -167,6 +177,13 @@ class MyFragment : Fragment() {
 
     private fun showFollowToast() {
         Toast.makeText(requireContext(), R.string.message_toast_follow, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun createAvatarBackground(colorHex: String): GradientDrawable {
+        return GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(runCatching { Color.parseColor(colorHex) }.getOrDefault(Color.parseColor("#FF8A9F")))
+        }
     }
 
     override fun onDestroyView() {

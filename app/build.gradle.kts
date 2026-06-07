@@ -22,7 +22,11 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
-        buildConfigField("String", "BASE_API_URL", "\"https://your-backend-host.example.com/\"")
+        buildConfigField("String", "BASE_API_URL", "\"http://10.0.2.2:8080/\"")
+        buildConfigField("boolean", "USE_MOCK_DATA", "false")
+        buildConfigField("int", "API_CONNECT_TIMEOUT_SECONDS", "15")
+        buildConfigField("int", "API_READ_TIMEOUT_SECONDS", "15")
+        buildConfigField("int", "API_WRITE_TIMEOUT_SECONDS", "15")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -45,6 +49,11 @@ android {
         compose = true
         viewBinding = true
     }
+
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -68,6 +77,9 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(platform(libs.okhttp.bom))
     implementation(libs.okhttp)
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.gson)
+    implementation(libs.retrofit.scalars)
     implementation(libs.google.material)
     implementation(libs.androidx.recyclerview)
     implementation(libs.androidx.fragment)
@@ -86,6 +98,7 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

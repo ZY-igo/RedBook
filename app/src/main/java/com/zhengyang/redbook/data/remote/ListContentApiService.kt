@@ -9,5 +9,5 @@ import com.zhengyang.redbook.data.remote.model.RemoteNoteDto
 
 interface ListContentApiService {
 
-    suspend fun getListContent(): List<RemoteNoteDto>
+    suspend fun getListContent(): RemoteResult<List<RemoteNoteDto>>
 }

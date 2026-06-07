@@ -32,7 +32,7 @@ import com.zhengyang.redbook.data.model.SearchHistoryEntity
         DraftEntity::class
     ],
     version = 5,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class RedBookDatabase : RoomDatabase() {
     abstract fun listDao(): ListDao

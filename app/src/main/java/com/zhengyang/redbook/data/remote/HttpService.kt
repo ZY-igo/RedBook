@@ -1,51 +1,47 @@
-/**
- * 文件说明： HttpService.kt
- * 作用： 封装远程数据访问相关逻辑，包括接口配置、请求行为和响应解析。
- * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
- */
 package com.zhengyang.redbook.data.remote
 
 import com.zhengyang.redbook.data.remote.model.RemoteNoteDto
+import com.zhengyang.redbook.utils.AppLogger
+import java.io.IOException
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
 
 class HttpService @Inject constructor(
-    private val okHttpClient: OkHttpClient,
+    private val retrofitApi: ListContentRetrofitApi,
     private val remoteApiConfig: RemoteApiConfig,
     private val responseParser: ListContentResponseParser,
     private val mockFactory: RemoteNoteMockFactory
 ) : ListContentApiService {
 
-    override suspend fun getListContent(): List<RemoteNoteDto> = withContext(Dispatchers.IO) {
+    override suspend fun getListContent(): RemoteResult<List<RemoteNoteDto>> = withContext(Dispatchers.IO) {
         if (remoteApiConfig.shouldUseMockData()) {
-            return@withContext mockFactory.create()
+            return@withContext RemoteResult.Success(mockFactory.create())
         }
-        executeGetListContent(buildListContentRequest())
+        executeGetListContent()
     }
 
-    private fun buildListContentRequest(): Request {
-        val requestBuilder = Request.Builder()
-            .url(remoteApiConfig.baseUrl.newBuilder().addPathSegments(remoteApiConfig.listContentPath).build())
-            .get()
+    private suspend fun executeGetListContent(): RemoteResult<List<RemoteNoteDto>> {
+        return try {
+            val response = retrofitApi.getListContent(remoteApiConfig.listContentPath)
+            val responseBody = response.body()?.string().orEmpty()
+            val errorBody = response.errorBody()?.string().orEmpty()
 
-        remoteApiConfig.defaultHeaders.forEach { (key, value) ->
-            requestBuilder.header(key, value)
-        }
-
-        return requestBuilder.build()
-    }
-
-    private fun executeGetListContent(request: Request): List<RemoteNoteDto> {
-        return runCatching {
-            okHttpClient.newCall(request).execute().use { response ->
-                val responseBody = response.body?.string().orEmpty()
-                if (!response.isSuccessful) return@use mockFactory.create()
-
-                responseParser.parse(responseBody).ifEmpty { mockFactory.create() }
+            if (!response.isSuccessful) {
+                return RemoteResult.HttpError(
+                    code = response.code(),
+                    body = errorBody.ifBlank { responseBody }
+                )
             }
-        }.getOrElse { mockFactory.create() }
+
+            AppLogger.d("HttpService", "Parsed list content response via Retrofit.")
+            runCatching { responseParser.parse(responseBody) }
+                .fold(
+                    onSuccess = { RemoteResult.Success(it) },
+                    onFailure = { RemoteResult.ParseError(it) }
+                )
+        } catch (error: IOException) {
+            RemoteResult.NetworkError(error)
+        }
     }
 }

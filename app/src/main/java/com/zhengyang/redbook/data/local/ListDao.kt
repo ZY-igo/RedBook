@@ -10,6 +10,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import com.zhengyang.redbook.data.model.DiscoverCategoryEntity
 import com.zhengyang.redbook.data.model.HomeCardEntity
@@ -23,6 +24,13 @@ interface ListDao {
     @Query("SELECT * FROM note_item")
     suspend fun getAll(): List<NoteItem>
 
+    @Query("SELECT * FROM note_item LIMIT :limit OFFSET :offset")
+    suspend fun getPagedNotes(limit: Int, offset: Int): List<NoteItem>
+
+    @Query("SELECT COUNT(*) FROM note_item")
+    suspend fun getNoteCount(): Int
+
+    @Transaction
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(items: List<NoteItem>): List<Long>
 
@@ -35,6 +43,7 @@ interface ListDao {
     @Query("SELECT * FROM discover_category ORDER BY sortOrder")
     suspend fun getDiscoverCategories(): List<DiscoverCategoryEntity>
 
+    @Transaction
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDiscoverCategories(items: List<DiscoverCategoryEntity>)
 
@@ -44,6 +53,10 @@ interface ListDao {
     @Query("SELECT * FROM home_card WHERE sectionKey = :sectionKey ORDER BY sortOrder")
     suspend fun getHomeCardsBySection(sectionKey: String): List<HomeCardEntity>
 
+    @Query("SELECT * FROM home_card WHERE sectionKey = :sectionKey ORDER BY sortOrder LIMIT :limit OFFSET :offset")
+    suspend fun getPagedHomeCardsBySection(sectionKey: String, limit: Int, offset: Int): List<HomeCardEntity>
+
+    @Transaction
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertHomeCards(items: List<HomeCardEntity>)
 
@@ -53,6 +66,7 @@ interface ListDao {
     @Query("SELECT * FROM message_row ORDER BY sortOrder")
     suspend fun getMessageRows(): List<MessageRowEntity>
 
+    @Transaction
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessageRows(items: List<MessageRowEntity>)
 

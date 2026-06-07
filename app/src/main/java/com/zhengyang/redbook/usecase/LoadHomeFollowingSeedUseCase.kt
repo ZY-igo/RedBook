@@ -5,19 +5,34 @@
  */
 package com.zhengyang.redbook.usecase
 
+import com.zhengyang.redbook.data.mapper.HomeMapper
 import com.zhengyang.redbook.data.repository.HomeRepository
 import com.zhengyang.redbook.ui.home.FollowingUserItem
 import com.zhengyang.redbook.ui.home.HomeCardItem
 import javax.inject.Inject
 
 class LoadHomeFollowingSeedUseCase @Inject constructor(
-    private val homeRepository: HomeRepository
+    private val homeRepository: HomeRepository,
+    private val homeMapper: HomeMapper,
+    private val displayPolicy: HomeDiscoverItemDisplayPolicy
 ) {
-    suspend operator fun invoke(): HomeFollowingSeed {
-        return HomeFollowingSeed(
-            suggestedUsers = homeRepository.getSuggestedFollowingUsers(),
-            followingFeedItems = homeRepository.getFollowingFeedItems()
-        )
+    suspend operator fun invoke(
+        offset: Int = 0,
+        limit: Int = DEFAULT_PAGE_SIZE
+    ): Result<HomeFollowingSeed> {
+        return runCatching {
+            HomeFollowingSeed(
+                suggestedUsers = homeRepository.getSuggestedFollowingUsers()
+                    .map(homeMapper::toFollowingUserUiModel),
+                followingFeedItems = homeRepository.getFollowingFeedItemsPage(offset = offset, limit = limit)
+                    .filter(displayPolicy::isDisplayable)
+                    .map(homeMapper::toHomeCardUiModel)
+            )
+        }
+    }
+
+    companion object {
+        const val DEFAULT_PAGE_SIZE = 8
     }
 }
 

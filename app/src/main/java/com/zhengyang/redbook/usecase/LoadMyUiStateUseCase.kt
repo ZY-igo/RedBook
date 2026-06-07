@@ -14,6 +14,7 @@ class LoadMyUiStateUseCase @Inject constructor(
 ) {
     suspend operator fun invoke(): MyUiState {
         return MyUiState(
+            profile = myRepository.getProfile(),
             stats = myRepository.getProfileStats(),
             interestPeople = myRepository.getInterestPeople(),
             isInterestSectionVisible = true

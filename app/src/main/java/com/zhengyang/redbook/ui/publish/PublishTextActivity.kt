@@ -9,16 +9,26 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnAttach
 import androidx.core.view.updateLayoutParams
+import androidx.lifecycle.lifecycleScope
+import com.zhengyang.redbook.data.repository.PublishRepository
 import com.zhengyang.redbook.databinding.ActivityPublishTextBinding
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
+import kotlinx.coroutines.launch
 
+@AndroidEntryPoint
 class PublishTextActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityPublishTextBinding
+
+    @Inject
+    lateinit var publishRepository: PublishRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,6 +39,7 @@ class PublishTextActivity : AppCompatActivity() {
         bindEntryMode()
 
         binding.buttonClose.setOnClickListener { finish() }
+        binding.buttonNext.setOnClickListener { publishNote() }
         binding.longFormEntry.setOnClickListener {
             startActivity(
                 PublishLongFormActivity.createIntent(
@@ -77,6 +88,45 @@ class PublishTextActivity : AppCompatActivity() {
 
         binding.topBar.doOnAttach { ViewCompat.requestApplyInsets(it) }
         binding.longFormEntry.doOnAttach { ViewCompat.requestApplyInsets(it) }
+    }
+
+    private fun publishNote() {
+        val content = binding.contentInput.text?.toString()?.trim().orEmpty()
+        if (content.isBlank()) {
+            binding.contentInput.error = "请输入内容"
+            return
+        }
+        val title = buildTitle(content)
+        val mediaType = when (intent.getStringExtra(EXTRA_MODE)?.let(Mode::valueOf)) {
+            Mode.ALBUM -> "IMAGE"
+            Mode.CAMERA -> "VIDEO"
+            else -> "TEXT"
+        }
+        binding.buttonNext.isEnabled = false
+        lifecycleScope.launch {
+            runCatching {
+                publishRepository.createTextNote(
+                    title = title,
+                    content = content,
+                    mediaType = mediaType
+                )
+            }.onSuccess {
+                Toast.makeText(this@PublishTextActivity, "发布成功", Toast.LENGTH_SHORT).show()
+                finish()
+            }.onFailure { error ->
+                binding.buttonNext.isEnabled = true
+                Toast.makeText(
+                    this@PublishTextActivity,
+                    error.message ?: "发布失败，请稍后重试",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
+
+    private fun buildTitle(content: String): String {
+        val firstLine = content.lineSequence().firstOrNull()?.trim().orEmpty()
+        return firstLine.takeIf { it.isNotBlank() }?.take(20) ?: content.take(20)
     }
 
     enum class Mode {

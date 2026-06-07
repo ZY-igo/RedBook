@@ -13,18 +13,18 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 
 class RemoteApiConfig @Inject constructor() {
     val baseUrl: HttpUrl = BuildConfig.BASE_API_URL.toHttpUrl()
-    val listContentPath: String = "api/v1/home/feed"
-    val connectTimeoutSeconds: Long = 15
-    val readTimeoutSeconds: Long = 15
-    val writeTimeoutSeconds: Long = 15
-    val placeholderHost: String = "your-backend-host.example.com"
+    val listContentPath: String = "api/v1/home/feed?categoryId=recommend&offset=0&limit=10"
+    val useMockData: Boolean = BuildConfig.USE_MOCK_DATA
+    val connectTimeoutSeconds: Long = BuildConfig.API_CONNECT_TIMEOUT_SECONDS.toLong()
+    val readTimeoutSeconds: Long = BuildConfig.API_READ_TIMEOUT_SECONDS.toLong()
+    val writeTimeoutSeconds: Long = BuildConfig.API_WRITE_TIMEOUT_SECONDS.toLong()
 
     val defaultHeaders: Map<String, String> = mapOf(
         HEADER_ACCEPT to "application/json",
         HEADER_CONTENT_TYPE to "application/json"
     )
 
-    fun shouldUseMockData(): Boolean = baseUrl.host == placeholderHost
+    fun shouldUseMockData(): Boolean = useMockData
 
     fun connectTimeoutUnit(): TimeUnit = TimeUnit.SECONDS
     fun readTimeoutUnit(): TimeUnit = TimeUnit.SECONDS

@@ -1,130 +1,124 @@
-/**
- * 文件说明： HomeRepositoryImpl.kt
- * 作用： 协调不同数据源，并向上层提供统一的仓储实现。
- * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
- */
 package com.zhengyang.redbook.data.repository
 
-import com.zhengyang.redbook.data.local.ListDao
-import com.zhengyang.redbook.data.local.LocalSeedInitializer
-import com.zhengyang.redbook.data.local.AssetSeedDataSource
-import com.zhengyang.redbook.data.model.DiscoverCategoryEntity
-import com.zhengyang.redbook.data.model.FollowingUserEntity
-import com.zhengyang.redbook.data.model.HomeCardEntity
-import com.zhengyang.redbook.data.model.NoteItem
-import com.zhengyang.redbook.data.remote.ListContentApiService
-import com.zhengyang.redbook.data.remote.mapper.RemoteNoteMapper
-import com.zhengyang.redbook.ui.home.DiscoverCategoryBucket
-import com.zhengyang.redbook.ui.home.DiscoverCategoryItem
-import com.zhengyang.redbook.ui.home.FollowingUserItem
-import com.zhengyang.redbook.ui.home.HomeCardItem
+import com.zhengyang.redbook.data.model.DiscoverCategory
+import com.zhengyang.redbook.data.model.FollowingUser
+import com.zhengyang.redbook.data.model.HomeDiscoverItem
+import com.zhengyang.redbook.data.model.MediaType
+import com.zhengyang.redbook.data.remote.RedBookApiService
+import com.zhengyang.redbook.data.remote.requireData
+import com.zhengyang.redbook.data.remote.model.RemoteFeedItemDto
+import com.zhengyang.redbook.data.remote.model.RemoteFollowingUserDto
+import com.zhengyang.redbook.data.remote.model.RemoteHomeCategoryDto
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class HomeRepositoryImpl @Inject constructor(
-    private val httpService: ListContentApiService,
-    private val remoteNoteMapper: RemoteNoteMapper,
-    private val localDataService: ListDao,
-    private val localSeedInitializer: LocalSeedInitializer,
-    private val assetSeedDataSource: AssetSeedDataSource
+    private val apiService: RedBookApiService
 ) : HomeRepository {
 
-    override suspend fun getListContent(): List<NoteItem> {
-        val localItems = localDataService.getAll()
-        return if (localItems.isNotEmpty()) {
-            localItems
-        } else {
-            remoteNoteMapper.mapToDomain(httpService.getListContent()).also { remoteItems ->
-                if (remoteItems.isNotEmpty()) {
-                    localDataService.insertAll(remoteItems)
-                }
-            }
-        }
+    override suspend fun getCategories(): List<DiscoverCategory> = withContext(Dispatchers.IO) {
+        apiService.getHomeCategories().requireData()
+            .sortedBy(RemoteHomeCategoryDto::sortOrder)
+            .map { it.toDomain() }
     }
 
-    override suspend fun getCategories(): List<DiscoverCategoryItem> {
-        localSeedInitializer.ensureSeeded()
-        return localDataService.getDiscoverCategories().map { it.toCategoryItem() }
+    override suspend fun getDiscoverItems(categoryId: String): List<HomeDiscoverItem> {
+        return getDiscoverItemsPage(categoryId = categoryId, offset = 0, limit = DEFAULT_PAGE_SIZE)
     }
 
-    override suspend fun getDiscoverItems(category: DiscoverCategoryItem): List<HomeCardItem> {
-        localSeedInitializer.ensureSeeded()
-        return if (category.bucket == DiscoverCategoryBucket.RECOMMEND) {
-            getListContent().map { it.toHomeCardItem() }
-        } else {
-            localDataService.getHomeCardsBySection(category.id).map { it.toHomeCardItem() }
-        }
+    override suspend fun getDiscoverItemsPage(
+        categoryId: String,
+        offset: Int,
+        limit: Int
+    ): List<HomeDiscoverItem> = withContext(Dispatchers.IO) {
+        apiService.getHomeFeed(categoryId = categoryId, offset = offset, limit = limit)
+            .requireData()
+            .items
+            .map { it.toDomain() }
     }
 
-    override suspend fun getSuggestedFollowingUsers(): List<FollowingUserItem> {
-        return assetSeedDataSource.load().followingUsers.map { it.toFollowingUserItem() }
+    override suspend fun getSuggestedFollowingUsers(): List<FollowingUser> = withContext(Dispatchers.IO) {
+        apiService.getFollowingSeed(offset = 0, limit = DEFAULT_FOLLOWING_PAGE_SIZE)
+            .requireData()
+            .suggestedUsers
+            .filterNot(RemoteFollowingUserDto::followed)
+            .map { it.toDomain() }
     }
 
-    override suspend fun getFollowingFeedItems(): List<HomeCardItem> {
-        localSeedInitializer.ensureSeeded()
-        return localDataService.getHomeCardsBySection("following").map { it.toHomeCardItem() }
+    override suspend fun getFollowingFeedItems(): List<HomeDiscoverItem> {
+        return getFollowingFeedItemsPage(offset = 0, limit = DEFAULT_FOLLOWING_PAGE_SIZE)
     }
 
-    private fun NoteItem.toHomeCardItem(): HomeCardItem {
-        return HomeCardItem(
+    override suspend fun getFollowingFeedItemsPage(offset: Int, limit: Int): List<HomeDiscoverItem> = withContext(Dispatchers.IO) {
+        apiService.getFollowingSeed(offset = offset, limit = limit)
+            .requireData()
+            .followingFeedItems
+            .items
+            .map { it.toDomain() }
+    }
+
+    override suspend fun followUser(userId: String) = withContext(Dispatchers.IO) {
+        apiService.followUser(userId).requireData()
+        Unit
+    }
+
+    private fun RemoteHomeCategoryDto.toDomain(): DiscoverCategory {
+        return DiscoverCategory(
             id = id,
             title = title,
-            author = author,
-            likeCount = likeCount.toString(),
-            badge = description,
-            coverLabel = description,
-            coverHeightDp = coverHeightDp,
-            mediaType = if (mediaType.equals("video", ignoreCase = true)) {
-                HomeCardItem.MediaType.VIDEO
-            } else {
-                HomeCardItem.MediaType.IMAGE
-            },
-            imageUrls = listOfNotNull(imageUrl ?: coverUrl),
-            imageUrl = imageUrl ?: coverUrl,
-            videoUrl = videoUrl,
-            videoCoverUrl = coverUrl,
-            startColorHex = "#D8082B",
-            endColorHex = "#6D000F",
-            avatarColorHex = "#FF8A9F"
-        )
-    }
-
-    private fun DiscoverCategoryEntity.toCategoryItem(): DiscoverCategoryItem {
-        return DiscoverCategoryItem(
-            id = id,
-            title = title,
-            bucket = DiscoverCategoryBucket.valueOf(bucket),
+            bucket = bucket,
             usesWaterfall = usesWaterfall,
-            isDefaultSelected = isDefaultSelected
+            isDefaultSelected = defaultSelected
         )
     }
 
-    private fun HomeCardEntity.toHomeCardItem(): HomeCardItem {
-        return HomeCardItem(
-            id = id,
-            title = title,
-            author = author,
-            likeCount = likeCount,
-            badge = badge,
-            coverLabel = coverLabel,
-            coverHeightDp = coverHeightDp,
-            mediaType = if (mediaType == "VIDEO") HomeCardItem.MediaType.VIDEO else HomeCardItem.MediaType.IMAGE,
-            imageUrls = listOfNotNull(imageUrl),
-            imageUrl = imageUrl,
-            videoUrl = videoUrl,
-            videoCoverUrl = videoCoverUrl,
-            startColorHex = startColorHex,
-            endColorHex = endColorHex,
-            avatarColorHex = avatarColorHex
-        )
-    }
-
-    private fun FollowingUserEntity.toFollowingUserItem(): FollowingUserItem {
-        return FollowingUserItem(
+    private fun RemoteFollowingUserDto.toDomain(): FollowingUser {
+        return FollowingUser(
             id = id,
             name = name,
             subtitle = subtitle,
             avatarColorHex = avatarColorHex,
             badge = badge
         )
+    }
+
+    private fun RemoteFeedItemDto.toDomain(): HomeDiscoverItem {
+        val resolvedImageUrl = imageUrl ?: videoCoverUrl ?: coverUrl
+        return HomeDiscoverItem(
+            id = id,
+            title = title,
+            author = author,
+            likeCount = likeCount.orEmpty().ifBlank { "0" },
+            badge = badge.orEmpty(),
+            coverLabel = coverLabel.orEmpty(),
+            coverHeightDp = coverHeightDp ?: DEFAULT_COVER_HEIGHT_DP,
+            mediaType = mediaType.toMediaType(),
+            imageUrls = listOfNotNull(resolvedImageUrl),
+            imageUrl = resolvedImageUrl,
+            videoUrl = videoUrl,
+            videoCoverUrl = videoCoverUrl ?: coverUrl ?: imageUrl,
+            startColorHex = startColorHex ?: DEFAULT_START_COLOR_HEX,
+            endColorHex = endColorHex ?: DEFAULT_END_COLOR_HEX,
+            avatarColorHex = avatarColorHex ?: DEFAULT_AVATAR_COLOR_HEX
+        )
+    }
+
+    private fun String.toMediaType(): MediaType {
+        return when (uppercase()) {
+            MediaType.VIDEO.name -> MediaType.VIDEO
+            MediaType.TEXT.name -> MediaType.TEXT
+            MediaType.LONG_FORM.name -> MediaType.LONG_FORM
+            else -> MediaType.IMAGE
+        }
+    }
+
+    private companion object {
+        const val DEFAULT_PAGE_SIZE = 10
+        const val DEFAULT_FOLLOWING_PAGE_SIZE = 8
+        const val DEFAULT_COVER_HEIGHT_DP = 220
+        const val DEFAULT_START_COLOR_HEX = "#D8082B"
+        const val DEFAULT_END_COLOR_HEX = "#6D000F"
+        const val DEFAULT_AVATAR_COLOR_HEX = "#FF8A9F"
     }
 }

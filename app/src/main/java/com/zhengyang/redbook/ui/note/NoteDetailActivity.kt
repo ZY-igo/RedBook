@@ -43,6 +43,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.doOnLayout
+import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
@@ -55,6 +56,11 @@ import androidx.recyclerview.widget.LinearSnapHelper
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
 import com.zhengyang.redbook.R
+import com.zhengyang.redbook.data.remote.RemoteResourceMapper
+import com.zhengyang.redbook.data.remote.model.RemoteCommentDto
+import com.zhengyang.redbook.data.remote.model.RemoteNoteDetailDto
+import com.zhengyang.redbook.data.remote.model.RemoteReplyDto
+import com.zhengyang.redbook.data.repository.NoteRepository
 import com.zhengyang.redbook.databinding.ActivityNoteDetailImageBinding
 import com.zhengyang.redbook.databinding.ActivityNoteDetailVideoBinding
 import com.zhengyang.redbook.databinding.ItemNoteCommentBinding
@@ -64,9 +70,16 @@ import com.zhengyang.redbook.media.MediaItemFactory
 import com.zhengyang.redbook.media.MediaPlayerFactory
 import com.zhengyang.redbook.service.foreground.NotificationService
 import com.zhengyang.redbook.ui.home.HomeCardItem
+import dagger.hilt.android.AndroidEntryPoint
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import javax.inject.Inject
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
+@AndroidEntryPoint
 class NoteDetailActivity : AppCompatActivity() {
 
     private var imageBinding: ActivityNoteDetailImageBinding? = null
@@ -92,6 +105,7 @@ class NoteDetailActivity : AppCompatActivity() {
     private val imagePagerAdapter = NoteImagePagerAdapter()
     private val commentAdapter = NoteCommentAdapter(
         onLikeClick = ::toggleCommentLike,
+        onReplyLikeClick = ::toggleReplyLike,
         onReplyClick = { comment, replyTo -> showCommentDialog(parentComment = comment, replyToAuthor = replyTo) },
         onReplyToggleClick = ::toggleCommentReplies
     )
@@ -106,10 +120,23 @@ class NoteDetailActivity : AppCompatActivity() {
     private var commentSortMode = CommentSortMode.DEFAULT
     private var activeCommentDialog: AlertDialog? = null
     private var activeCommentDialogState: CommentDialogState? = null
+    private var currentNoteId: String? = null
+    private var currentAuthorId: String? = null
+    private var currentAuthorName: String = ""
+    private var currentNoteTitle: String = ""
+    private var currentVideoUrl: String = ""
+    private var currentCoverUrl: String = ""
+    private var currentImageUrls: List<String> = emptyList()
     private val commentImagePicker =
         registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
             handlePickedCommentImage(uri)
         }
+
+    @Inject
+    lateinit var noteRepository: NoteRepository
+
+    @Inject
+    lateinit var remoteResourceMapper: RemoteResourceMapper
 
     private val isVideo: Boolean by lazy {
         intent.getStringExtra(EXTRA_MEDIA_TYPE) == HomeCardItem.MediaType.VIDEO.name
@@ -128,12 +155,19 @@ class NoteDetailActivity : AppCompatActivity() {
         volumeControlStream = AudioManager.STREAM_MUSIC
         isFullscreen = savedInstanceState?.getBoolean(STATE_FULLSCREEN)
             ?: resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        currentNoteId = intent.getStringExtra(EXTRA_NOTE_ID)
+        currentAuthorName = intent.getStringExtra(EXTRA_AUTHOR).orEmpty()
+        currentNoteTitle = intent.getStringExtra(EXTRA_TITLE).orEmpty()
+        currentVideoUrl = intent.getStringExtra(EXTRA_VIDEO_URL).orEmpty()
+        currentCoverUrl = intent.getStringExtra(EXTRA_COVER_URL).orEmpty()
+        currentImageUrls = collectImageUrls(fallbackUrl = currentCoverUrl)
 
         if (isVideo) {
             setupVideoLayout()
         } else {
             setupImageLayout()
         }
+        loadRemoteNote()
     }
 
     override fun onStart() {
@@ -153,7 +187,7 @@ class NoteDetailActivity : AppCompatActivity() {
             gestureHideRunnable = null
             cachedPlayer?.let { player ->
                 savePlaybackProgress(
-                    videoUrl = intent.getStringExtra(EXTRA_VIDEO_URL).orEmpty(),
+                    videoUrl = currentVideoUrl,
                     positionMs = player.currentPosition,
                     durationMs = player.duration
                 )
@@ -237,6 +271,7 @@ class NoteDetailActivity : AppCompatActivity() {
         bindVideoHeader()
         bindVideoContent()
         bindVideoEvents()
+        bindVideoActions()
         applyVideoModeUi()
         updateSpeedButton()
         requireVideoBinding().root.post { refreshVideoActionLabels() }
@@ -287,7 +322,7 @@ class NoteDetailActivity : AppCompatActivity() {
         val author = intent.getStringExtra(EXTRA_AUTHOR).orEmpty()
         val title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
         val description = intent.getStringExtra(EXTRA_DESCRIPTION).orEmpty()
-        val coverUrl = intent.getStringExtra(EXTRA_COVER_URL).orEmpty()
+        val coverUrl = currentCoverUrl
 
         noteLikeCountValue = intent.getStringExtra(EXTRA_LIKE_COUNT)?.toIntOrNull() ?: 0
         noteCollectCountValue = derivedCollectCount().toIntOrNull() ?: 0
@@ -299,7 +334,7 @@ class NoteDetailActivity : AppCompatActivity() {
         binding.publishTimeText.text = derivedPublishTime()
         binding.locationText.text = derivedLocation(author)
         binding.commentInput.text = getString(R.string.note_detail_comment_hint)
-        bindImagePager(collectImageUrls(fallbackUrl = coverUrl))
+        bindImagePager(currentImageUrls.ifEmpty { collectImageUrls(fallbackUrl = coverUrl) })
         bindImageActions(author = author, title = title)
         seedComments(author = author, title = title)
         refreshImageActionState()
@@ -312,7 +347,7 @@ class NoteDetailActivity : AppCompatActivity() {
         val title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
         val description = intent.getStringExtra(EXTRA_DESCRIPTION).orEmpty()
         val likeCount = intent.getStringExtra(EXTRA_LIKE_COUNT).orEmpty()
-        val coverUrl = intent.getStringExtra(EXTRA_COVER_URL).orEmpty()
+        val coverUrl = currentCoverUrl
 
         binding.authorName.text = author
         binding.avatarText.text = author.take(1)
@@ -333,6 +368,7 @@ class NoteDetailActivity : AppCompatActivity() {
         binding.retryButton.text = getString(R.string.note_detail_retry)
         binding.followButton.text = getString(R.string.note_detail_follow)
         binding.commentInput.text = getString(R.string.note_detail_comment_hint)
+        refreshVideoActionState()
     }
 
     private fun bindImageActions(author: String, title: String) {
@@ -372,8 +408,133 @@ class NoteDetailActivity : AppCompatActivity() {
         binding.commentComposerCamera.setOnClickListener {
             openCommentImagePicker()
         }
+        binding.topFollowButton.setOnClickListener { toggleAuthorFollow(author) }
         binding.commentList.layoutManager = LinearLayoutManager(this)
         binding.commentList.adapter = commentAdapter
+    }
+
+    private fun bindVideoActions() {
+        val binding = requireVideoBinding()
+        binding.followButton.setOnClickListener { toggleAuthorFollow(currentAuthorName) }
+        binding.commentInput.setOnClickListener { showCommentDialog() }
+        binding.commentIcon.setOnClickListener { showCommentDialog() }
+        binding.likeIcon.setOnClickListener { toggleNoteLike() }
+        binding.likeCount.setOnClickListener { toggleNoteLike() }
+        binding.collectIcon.setOnClickListener { toggleNoteCollect() }
+        binding.collectCount.setOnClickListener { toggleNoteCollect() }
+    }
+
+    private fun loadRemoteNote() {
+        val noteId = currentNoteId ?: return
+        lifecycleScope.launch {
+            runCatching { noteRepository.getNoteDetail(noteId) }
+                .onSuccess { detail ->
+                    applyRemoteNote(detail)
+                    loadRemoteComments()
+                }
+                .onFailure { error ->
+                    Toast.makeText(
+                        this@NoteDetailActivity,
+                        error.message ?: "笔记详情加载失败",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+        }
+    }
+
+    private fun loadRemoteComments() {
+        val noteId = currentNoteId ?: return
+        lifecycleScope.launch {
+            runCatching {
+                noteRepository.getComments(
+                    noteId = noteId,
+                    sortMode = commentSortMode.backendValue()
+                )
+            }.onSuccess { comments ->
+                commentItems.clear()
+                commentItems.addAll(comments.map { it.toUiModel() })
+                refreshCommentSection()
+            }.onFailure { error ->
+                Toast.makeText(
+                    this@NoteDetailActivity,
+                    error.message ?: "评论加载失败",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
+
+    private fun applyRemoteNote(detail: RemoteNoteDetailDto) {
+        currentNoteId = detail.id
+        currentAuthorId = detail.author.id
+        currentAuthorName = detail.author.name
+        currentNoteTitle = detail.title
+        currentVideoUrl = detail.videoUrl.orEmpty()
+        currentCoverUrl = detail.coverUrl.orEmpty()
+        currentImageUrls = detail.imageUrls.filter { it.isNotBlank() }
+        noteLikeCountValue = detail.likeCount
+        noteCollectCountValue = detail.collectCount
+        isFollowingAuthor = detail.followingAuthor
+        isNoteLiked = detail.liked
+        isNoteCollected = detail.collected
+
+        if (isVideo) {
+            val binding = requireVideoBinding()
+            binding.authorName.text = detail.author.name
+            binding.avatarText.text = detail.author.avatarText.ifBlank { detail.author.name.take(1) }
+            binding.noteTitle.text = detail.title
+            binding.noteDescription.text = detail.description
+            binding.relatedText.text = detail.title
+            binding.videoCover.load(detail.coverUrl) {
+                crossfade(false)
+                placeholder(android.R.color.black)
+                error(android.R.color.black)
+            }
+            refreshVideoActionState(commentCountOverride = detail.commentCount)
+            releasePlayerIfNeeded()
+            setupPlayerIfNeeded()
+        } else {
+            val binding = requireImageBinding()
+            binding.topAuthorName.text = detail.author.name
+            binding.topAvatarText.text = detail.author.avatarText.ifBlank { detail.author.name.take(1) }
+            binding.noteTitle.text = detail.title
+            binding.noteDescription.text = detail.description
+            binding.relatedText.text = detail.title
+            binding.publishTimeText.text = formatPublishTime(detail.createdAt)
+            binding.locationText.text = detail.author.location.orEmpty().ifBlank {
+                derivedLocation(detail.author.name)
+            }
+            bindImagePager(currentImageUrls.ifEmpty { collectImageUrls(fallbackUrl = currentCoverUrl) })
+            refreshImageActionState()
+            binding.commentCount.text = detail.commentCount.toString()
+            binding.commentSectionTitle.text = "共 ${detail.commentCount} 条评论"
+        }
+    }
+
+    private fun toggleAuthorFollow(authorName: String) {
+        val authorId = currentAuthorId ?: return
+        val targetValue = !isFollowingAuthor
+        isFollowingAuthor = targetValue
+        refreshActionState()
+        lifecycleScope.launch {
+            runCatching { noteRepository.followAuthor(authorId, targetValue) }
+                .onSuccess {
+                    Toast.makeText(
+                        this@NoteDetailActivity,
+                        if (targetValue) "已关注 $authorName" else "已取消关注 $authorName",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                .onFailure { error ->
+                    isFollowingAuthor = !targetValue
+                    refreshActionState()
+                    Toast.makeText(
+                        this@NoteDetailActivity,
+                        error.message ?: "关注操作失败",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+        }
     }
 
     private fun seedComments(author: String, title: String) {
@@ -389,6 +550,7 @@ class NoteDetailActivity : AppCompatActivity() {
             avatarResId = R.drawable.bg_xhs_avatar_pink,
             replies = mutableListOf(
                 NoteReplyUiModel(
+                    id = "reply_1",
                     author = author,
                     content = "谢谢喜欢，我当时特意等了这个光线。",
                     city = derivedLocation(author),
@@ -462,6 +624,24 @@ class NoteDetailActivity : AppCompatActivity() {
         updateFollowButton()
     }
 
+    private fun refreshVideoActionState(commentCountOverride: Int? = null) {
+        val binding = videoBinding ?: return
+        val accentColor = ContextCompat.getColor(this, R.color.xhs_accent)
+        val defaultTextColor = ContextCompat.getColor(this, R.color.xhs_text_primary)
+        binding.likeCount.text = noteLikeCountValue.toString()
+        binding.collectCount.text = noteCollectCountValue.toString()
+        commentCountOverride?.let { binding.commentCount.text = it.toString() }
+        binding.likeIcon.setColorFilter(if (isNoteLiked) accentColor else defaultTextColor)
+        binding.collectIcon.setColorFilter(if (isNoteCollected) accentColor else defaultTextColor)
+        binding.likeCount.setTextColor(if (isNoteLiked) accentColor else defaultTextColor)
+        binding.collectCount.setTextColor(if (isNoteCollected) accentColor else defaultTextColor)
+        updateVideoFollowButton()
+    }
+
+    private fun refreshActionState() {
+        if (isVideo) refreshVideoActionState() else refreshImageActionState()
+    }
+
     private fun updateFollowButton() {
         val binding = requireImageBinding()
         binding.topFollowButton.text = if (isFollowingAuthor) "已关注" else "关注"
@@ -478,16 +658,62 @@ class NoteDetailActivity : AppCompatActivity() {
         )
     }
 
+    private fun updateVideoFollowButton() {
+        val binding = videoBinding ?: return
+        binding.followButton.text = if (isFollowingAuthor) "已关注" else getString(R.string.note_detail_follow)
+        binding.followButton.background = AppCompatResources.getDrawable(
+            this,
+            if (isFollowingAuthor) R.drawable.bg_xhs_follow_button_solid
+            else R.drawable.bg_xhs_follow_button_outline
+        )
+        binding.followButton.setTextColor(
+            ContextCompat.getColor(
+                this,
+                if (isFollowingAuthor) android.R.color.white else R.color.xhs_accent
+            )
+        )
+    }
+
     private fun toggleNoteLike() {
-        isNoteLiked = !isNoteLiked
-        noteLikeCountValue = (noteLikeCountValue + if (isNoteLiked) 1 else -1).coerceAtLeast(0)
-        refreshImageActionState()
+        val noteId = currentNoteId ?: return
+        val targetValue = !isNoteLiked
+        isNoteLiked = targetValue
+        noteLikeCountValue = (noteLikeCountValue + if (targetValue) 1 else -1).coerceAtLeast(0)
+        refreshActionState()
+        lifecycleScope.launch {
+            runCatching { noteRepository.toggleLike(noteId, targetValue) }
+                .onFailure { error ->
+                    isNoteLiked = !targetValue
+                    noteLikeCountValue = (noteLikeCountValue + if (targetValue) -1 else 1).coerceAtLeast(0)
+                    refreshActionState()
+                    Toast.makeText(
+                        this@NoteDetailActivity,
+                        error.message ?: "点赞失败",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+        }
     }
 
     private fun toggleNoteCollect() {
-        isNoteCollected = !isNoteCollected
-        noteCollectCountValue = (noteCollectCountValue + if (isNoteCollected) 1 else -1).coerceAtLeast(0)
-        refreshImageActionState()
+        val noteId = currentNoteId ?: return
+        val targetValue = !isNoteCollected
+        isNoteCollected = targetValue
+        noteCollectCountValue = (noteCollectCountValue + if (targetValue) 1 else -1).coerceAtLeast(0)
+        refreshActionState()
+        lifecycleScope.launch {
+            runCatching { noteRepository.toggleCollect(noteId, targetValue) }
+                .onFailure { error ->
+                    isNoteCollected = !targetValue
+                    noteCollectCountValue = (noteCollectCountValue + if (targetValue) -1 else 1).coerceAtLeast(0)
+                    refreshActionState()
+                    Toast.makeText(
+                        this@NoteDetailActivity,
+                        error.message ?: "收藏失败",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+        }
     }
 
     private fun refreshCommentSection() {
@@ -523,7 +749,7 @@ class NoteDetailActivity : AppCompatActivity() {
             contentView.findViewById<View>(optionId).setOnClickListener {
                 commentSortMode = mode
                 popupWindow.dismiss()
-                refreshCommentSection()
+                loadRemoteComments()
             }
         }
 
@@ -547,14 +773,48 @@ class NoteDetailActivity : AppCompatActivity() {
     }
 
     private fun toggleCommentLike(comment: NoteCommentUiModel) {
-        comment.isLiked = !comment.isLiked
-        comment.likeCount = (comment.likeCount + if (comment.isLiked) 1 else -1).coerceAtLeast(0)
+        val targetValue = !comment.isLiked
+        comment.isLiked = targetValue
+        comment.likeCount = (comment.likeCount + if (targetValue) 1 else -1).coerceAtLeast(0)
         refreshCommentSection()
+        lifecycleScope.launch {
+            runCatching { noteRepository.toggleCommentLike(comment.id, targetValue) }
+                .onFailure { error ->
+                    comment.isLiked = !targetValue
+                    comment.likeCount = (comment.likeCount + if (targetValue) -1 else 1).coerceAtLeast(0)
+                    refreshCommentSection()
+                    Toast.makeText(
+                        this@NoteDetailActivity,
+                        error.message ?: "评论点赞失败",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+        }
     }
 
     private fun toggleCommentReplies(comment: NoteCommentUiModel) {
         comment.isReplyExpanded = !comment.isReplyExpanded
         refreshCommentSection()
+    }
+
+    private fun toggleReplyLike(reply: NoteReplyUiModel) {
+        val targetValue = !reply.isLiked
+        reply.isLiked = targetValue
+        reply.likeCount = (reply.likeCount + if (targetValue) 1 else -1).coerceAtLeast(0)
+        refreshCommentSection()
+        lifecycleScope.launch {
+            runCatching { noteRepository.toggleCommentLike(reply.id, targetValue) }
+                .onFailure { error ->
+                    reply.isLiked = !targetValue
+                    reply.likeCount = (reply.likeCount + if (targetValue) -1 else 1).coerceAtLeast(0)
+                    refreshCommentSection()
+                    Toast.makeText(
+                        this@NoteDetailActivity,
+                        error.message ?: "回复点赞失败",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+        }
     }
 
     private fun showCommentDialog(
@@ -638,6 +898,36 @@ class NoteDetailActivity : AppCompatActivity() {
         parentComment: NoteCommentUiModel?,
         imageUri: String?
     ) {
+        val noteId = currentNoteId ?: return
+        lifecycleScope.launch {
+            runCatching {
+                noteRepository.createComment(
+                    noteId = noteId,
+                    content = content,
+                    parentCommentId = parentComment?.id,
+                    replyToUserName = activeCommentDialogState?.replyToAuthor,
+                    imageUrl = imageUri
+                )
+            }.onSuccess { remoteComment ->
+                if (parentComment == null) {
+                    commentItems.add(0, remoteComment.toUiModel())
+                    Toast.makeText(this@NoteDetailActivity, "评论已发布", Toast.LENGTH_SHORT).show()
+                } else {
+                    parentComment.replies.add(0, remoteComment.toReplyUiModel())
+                    parentComment.isReplyExpanded = true
+                    Toast.makeText(this@NoteDetailActivity, "回复已发布", Toast.LENGTH_SHORT).show()
+                }
+                refreshCommentSection()
+                scrollToCommentSection()
+            }.onFailure { error ->
+                Toast.makeText(
+                    this@NoteDetailActivity,
+                    error.message ?: "评论发布失败",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+        return
         val now = System.currentTimeMillis()
         if (parentComment == null) {
             commentItems.add(
@@ -822,7 +1112,7 @@ class NoteDetailActivity : AppCompatActivity() {
     }
 
     private fun setupPlayerIfNeeded() {
-        val videoUrl = intent.getStringExtra(EXTRA_VIDEO_URL).orEmpty()
+        val videoUrl = currentVideoUrl
         if (videoUrl.isBlank()) return
 
         val binding = requireVideoBinding()
@@ -860,7 +1150,7 @@ class NoteDetailActivity : AppCompatActivity() {
     private fun releasePlayerIfNeeded() {
         val player = cachedPlayer ?: return
         savePlaybackProgress(
-            videoUrl = intent.getStringExtra(EXTRA_VIDEO_URL).orEmpty(),
+            videoUrl = currentVideoUrl,
             positionMs = player.currentPosition,
             durationMs = player.duration
         )
@@ -1480,6 +1770,15 @@ class NoteDetailActivity : AppCompatActivity() {
         return presetLocations[index]
     }
 
+    private fun formatPublishTime(createdAt: String): String {
+        val instant = parseInstantMillis(createdAt) ?: return createdAt
+        return publishTimeFormatter.format(Instant.ofEpochMilli(instant).atZone(ZoneId.systemDefault()))
+    }
+
+    private fun parseInstantMillis(value: String): Long? {
+        return runCatching { Instant.parse(value).toEpochMilli() }.getOrNull()
+    }
+
     private fun formatDuration(durationMs: Long): String {
         if (durationMs <= 0L) return "00:00"
         val totalSeconds = durationMs / 1000L
@@ -1505,8 +1804,56 @@ class NoteDetailActivity : AppCompatActivity() {
         return checkNotNull(videoBinding) { "Video binding is not initialized." }
     }
 
+    private fun RemoteCommentDto.toUiModel(): NoteCommentUiModel {
+        return NoteCommentUiModel(
+            id = id,
+            author = author,
+            content = content,
+            city = city,
+            timestamp = parseInstantMillis(createdAt) ?: System.currentTimeMillis(),
+            likeCount = likeCount,
+            isLiked = liked,
+            isAuthor = authorFlag,
+            avatarResId = remoteResourceMapper.avatarBackgroundForColorHex(avatarColorHex),
+            imageUri = imageUrl,
+            replies = replies.map { it.toUiModel() }.toMutableList()
+        )
+    }
+
+    private fun RemoteCommentDto.toReplyUiModel(): NoteReplyUiModel {
+        return NoteReplyUiModel(
+            id = id,
+            author = author,
+            content = content,
+            city = city,
+            timestamp = parseInstantMillis(createdAt) ?: System.currentTimeMillis(),
+            likeCount = likeCount,
+            isLiked = liked,
+            isAuthor = authorFlag,
+            avatarResId = remoteResourceMapper.avatarBackgroundForColorHex(avatarColorHex),
+            imageUri = imageUrl
+        )
+    }
+
+    private fun RemoteReplyDto.toUiModel(): NoteReplyUiModel {
+        return NoteReplyUiModel(
+            id = id,
+            author = author,
+            content = content,
+            city = city,
+            timestamp = parseInstantMillis(createdAt) ?: System.currentTimeMillis(),
+            likeCount = likeCount,
+            isLiked = liked,
+            isAuthor = authorFlag,
+            avatarResId = remoteResourceMapper.avatarBackgroundForColorHex(avatarColorHex),
+            imageUri = imageUrl,
+            replyToName = replyToName
+        )
+    }
+
     companion object {
         private const val TAG = "NoteDetailActivity"
+        private const val EXTRA_NOTE_ID = "extra_note_id"
         private const val EXTRA_TITLE = "extra_title"
         private const val EXTRA_AUTHOR = "extra_author"
         private const val EXTRA_LIKE_COUNT = "extra_like_count"
@@ -1522,9 +1869,11 @@ class NoteDetailActivity : AppCompatActivity() {
         private const val KEY_MUTED = "muted"
         private const val STATE_FULLSCREEN = "state_fullscreen"
         private const val DEFAULT_GESTURE_BRIGHTNESS = 0.5f
+        private val publishTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("MM-dd HH:mm")
 
         fun createIntent(context: Context, item: HomeCardItem): Intent {
             return Intent(context, NoteDetailActivity::class.java).apply {
+                putExtra(EXTRA_NOTE_ID, item.id)
                 putExtra(EXTRA_TITLE, item.title)
                 putExtra(EXTRA_AUTHOR, item.author)
                 putExtra(EXTRA_LIKE_COUNT, item.likeCount)
@@ -1543,6 +1892,14 @@ private enum class CommentSortMode {
     DEFAULT,
     LATEST,
     MOST_LIKED
+}
+
+private fun CommentSortMode.backendValue(): String {
+    return when (this) {
+        CommentSortMode.DEFAULT -> "default"
+        CommentSortMode.LATEST -> "latest"
+        CommentSortMode.MOST_LIKED -> "most_liked"
+    }
 }
 
 private data class CommentDialogState(
@@ -1573,6 +1930,7 @@ private data class NoteCommentUiModel(
 )
 
 private data class NoteReplyUiModel(
+    val id: String = "",
     val author: String,
     val content: String,
     val city: String,
@@ -1581,11 +1939,13 @@ private data class NoteReplyUiModel(
     var isLiked: Boolean = false,
     val isAuthor: Boolean,
     val avatarResId: Int,
-    val imageUri: String? = null
+    val imageUri: String? = null,
+    val replyToName: String? = null
 )
 
 private class NoteCommentAdapter(
     private val onLikeClick: (NoteCommentUiModel) -> Unit,
+    private val onReplyLikeClick: (NoteReplyUiModel) -> Unit,
     private val onReplyClick: (NoteCommentUiModel, String?) -> Unit,
     private val onReplyToggleClick: (NoteCommentUiModel) -> Unit
 ) : RecyclerView.Adapter<NoteCommentAdapter.NoteCommentViewHolder>() {
@@ -1611,6 +1971,7 @@ private class NoteCommentAdapter(
         holder.bind(
             comment = items[position],
             onLikeClick = onLikeClick,
+            onReplyLikeClick = onReplyLikeClick,
             onReplyClick = onReplyClick,
             onReplyToggleClick = onReplyToggleClick
         )
@@ -1625,6 +1986,7 @@ private class NoteCommentAdapter(
         fun bind(
             comment: NoteCommentUiModel,
             onLikeClick: (NoteCommentUiModel) -> Unit,
+            onReplyLikeClick: (NoteReplyUiModel) -> Unit,
             onReplyClick: (NoteCommentUiModel, String?) -> Unit,
             onReplyToggleClick: (NoteCommentUiModel) -> Unit
         ) {
@@ -1654,11 +2016,12 @@ private class NoteCommentAdapter(
             binding.commentEmotionAction.alpha = 0.72f
             binding.commentLikeAction.setOnClickListener { onLikeClick(comment) }
             binding.commentReplyAction.setOnClickListener { onReplyClick(comment, null) }
-            bindReplies(comment, onReplyClick, onReplyToggleClick)
+            bindReplies(comment, onReplyLikeClick, onReplyClick, onReplyToggleClick)
         }
 
         private fun bindReplies(
             comment: NoteCommentUiModel,
+            onReplyLikeClick: (NoteReplyUiModel) -> Unit,
             onReplyClick: (NoteCommentUiModel, String?) -> Unit,
             onReplyToggleClick: (NoteCommentUiModel) -> Unit
         ) {
@@ -1699,11 +2062,7 @@ private class NoteCommentAdapter(
                 replyBinding.replyMeta.text = "${relativeTimeLabel(reply.timestamp)}  ${reply.city}"
                 updateReplyLikeState(replyBinding, reply)
                 replyBinding.replyAction.setOnClickListener { onReplyClick(comment, reply.author) }
-                replyBinding.replyLikeAction.setOnClickListener {
-                    reply.isLiked = !reply.isLiked
-                    reply.likeCount = (reply.likeCount + if (reply.isLiked) 1 else -1).coerceAtLeast(0)
-                    updateReplyLikeState(replyBinding, reply)
-                }
+                replyBinding.replyLikeAction.setOnClickListener { onReplyLikeClick(reply) }
                 replyBinding.replyEmotionAction.alpha = 0.72f
                 if (index > 0) {
                     (replyBinding.root.layoutParams as? LinearLayout.LayoutParams)?.topMargin =

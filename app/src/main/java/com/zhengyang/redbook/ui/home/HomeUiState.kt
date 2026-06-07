@@ -10,5 +10,14 @@ data class HomeUiState(
     val discoverItems: List<HomeCardItem> = emptyList(),
     val suggestedUsers: List<FollowingUserItem> = emptyList(),
     val followingUsers: List<FollowingUserItem> = emptyList(),
-    val followingFeedItems: List<HomeCardItem> = emptyList()
+    val followingFeedItems: List<HomeCardItem> = emptyList(),
+    val isInitialLoading: Boolean = true,
+    val isDiscoverRefreshing: Boolean = false,
+    val isFollowingRefreshing: Boolean = false,
+    val isDiscoverLoadingMore: Boolean = false,
+    val isFollowingLoadingMore: Boolean = false,
+    val discoverHasMore: Boolean = true,
+    val followingHasMore: Boolean = true,
+    val discoverErrorMessage: String? = null,
+    val followingErrorMessage: String? = null
 )

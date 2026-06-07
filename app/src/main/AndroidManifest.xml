@@ -1,12 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-    文件说明： AndroidManifest.xml
-    作用： 声明 Android 组件、权限、主题以及其他应用级运行配置。
-    备注：该注释用于说明资源文件在界面结构、视觉表达或运行配置中的定位。
--->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 前台服务权限 -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -71,6 +65,7 @@
             android:theme="@style/Theme.RedBook.Splash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
@@ -88,7 +83,6 @@
                 <action android:name="com.zhengyang.redbook.CUSTOM_ACTION" />
             </intent-filter>
         </receiver>
-
     </application>
 
 </manifest>

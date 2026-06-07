@@ -20,7 +20,8 @@ data class HomeCardItem(
     val videoCoverUrl: String? = null,
     val startColorHex: String,
     val endColorHex: String,
-    val avatarColorHex: String
+    val avatarColorHex: String,
+    val isSkeleton: Boolean = false
 ) {
     enum class MediaType {
         IMAGE,

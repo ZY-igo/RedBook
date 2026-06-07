@@ -6,9 +6,18 @@
 package com.zhengyang.redbook.ui.my
 
 data class MyUiState(
+    val profile: MyProfileHeader = MyProfileHeader(),
     val stats: MyProfileStats = MyProfileStats(),
     val interestPeople: List<InterestPersonItem> = emptyList(),
     val isInterestSectionVisible: Boolean = true
+)
+
+data class MyProfileHeader(
+    val id: String = "",
+    val name: String = "",
+    val avatarText: String = "",
+    val avatarColorHex: String = "#FF8A9F",
+    val bio: String? = null
 )
 
 data class MyProfileStats(

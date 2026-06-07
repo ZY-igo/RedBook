@@ -5,15 +5,16 @@
  */
 package com.zhengyang.redbook.data.repository
 
-import com.zhengyang.redbook.data.model.NoteItem
-import com.zhengyang.redbook.ui.home.DiscoverCategoryItem
-import com.zhengyang.redbook.ui.home.FollowingUserItem
-import com.zhengyang.redbook.ui.home.HomeCardItem
+import com.zhengyang.redbook.data.model.DiscoverCategory
+import com.zhengyang.redbook.data.model.FollowingUser
+import com.zhengyang.redbook.data.model.HomeDiscoverItem
 
 interface HomeRepository {
-    suspend fun getListContent(): List<NoteItem>
-    suspend fun getCategories(): List<DiscoverCategoryItem>
-    suspend fun getDiscoverItems(category: DiscoverCategoryItem): List<HomeCardItem>
-    suspend fun getSuggestedFollowingUsers(): List<FollowingUserItem>
-    suspend fun getFollowingFeedItems(): List<HomeCardItem>
+    suspend fun getCategories(): List<DiscoverCategory>
+    suspend fun getDiscoverItems(categoryId: String): List<HomeDiscoverItem>
+    suspend fun getDiscoverItemsPage(categoryId: String, offset: Int, limit: Int): List<HomeDiscoverItem>
+    suspend fun getSuggestedFollowingUsers(): List<FollowingUser>
+    suspend fun getFollowingFeedItems(): List<HomeDiscoverItem>
+    suspend fun getFollowingFeedItemsPage(offset: Int, limit: Int): List<HomeDiscoverItem>
+    suspend fun followUser(userId: String)
 }

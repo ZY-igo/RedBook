@@ -5,15 +5,34 @@
  */
 package com.zhengyang.redbook.usecase
 
+import com.zhengyang.redbook.data.mapper.HomeMapper
 import com.zhengyang.redbook.data.repository.HomeRepository
 import com.zhengyang.redbook.ui.home.DiscoverCategoryItem
 import com.zhengyang.redbook.ui.home.HomeCardItem
 import javax.inject.Inject
 
 class LoadHomeDiscoverItemsUseCase @Inject constructor(
-    private val homeRepository: HomeRepository
+    private val homeRepository: HomeRepository,
+    private val homeMapper: HomeMapper,
+    private val displayPolicy: HomeDiscoverItemDisplayPolicy
 ) {
-    suspend operator fun invoke(category: DiscoverCategoryItem): List<HomeCardItem> {
-        return homeRepository.getDiscoverItems(category)
+    suspend operator fun invoke(
+        category: DiscoverCategoryItem,
+        offset: Int = 0,
+        limit: Int = DEFAULT_PAGE_SIZE
+    ): Result<List<HomeCardItem>> {
+        return runCatching {
+            homeRepository.getDiscoverItemsPage(
+                categoryId = category.id,
+                offset = offset,
+                limit = limit
+            )
+                .filter(displayPolicy::isDisplayable)
+                .map(homeMapper::toHomeCardUiModel)
+        }
+    }
+
+    companion object {
+        const val DEFAULT_PAGE_SIZE = 10
     }
 }
