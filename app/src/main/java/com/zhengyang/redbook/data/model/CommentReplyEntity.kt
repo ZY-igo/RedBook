@@ -1,7 +1,7 @@
 /**
  * 文件说明：CommentReplyEntity.kt
- * 作用：定义评论回复数据模型，用于承载回复内容、作者信息以及交互状态。
- * 备注：该实体通常作为评论区二级回复的基础结构，被列表展示、排序和状态更新逻辑复用。
+ * 作用：定义 Comment Reply Entity 相关本地数据实体结构。
+ * 备注：用于标注当前源码文件的职责，便于后续维护与排查。
  */
 package com.zhengyang.redbook.data.model
 

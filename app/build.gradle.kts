@@ -23,7 +23,6 @@ android {
         versionCode = 1
         versionName = "1.0"
         buildConfigField("String", "BASE_API_URL", "\"http://10.0.2.2:8080/\"")
-        buildConfigField("boolean", "USE_MOCK_DATA", "false")
         buildConfigField("int", "API_CONNECT_TIMEOUT_SECONDS", "15")
         buildConfigField("int", "API_READ_TIMEOUT_SECONDS", "15")
         buildConfigField("int", "API_WRITE_TIMEOUT_SECONDS", "15")

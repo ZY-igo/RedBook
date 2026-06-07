@@ -1,3 +1,8 @@
+/**
+ * 文件说明：HomeViewHolder.kt
+ * 作用：封装首页卡片列表项视图的持有、绑定与回收逻辑。
+ * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
+ */
 package com.zhengyang.redbook.ui.home
 
 import android.graphics.Color
@@ -10,10 +15,23 @@ import com.zhengyang.redbook.R
 import com.zhengyang.redbook.databinding.ItemNoteBinding
 import com.zhengyang.redbook.utils.dpToPx
 
+/**
+ * 首页卡片视图持有者
+ *
+ * 负责根据卡片类型绑定图文、视频和骨架屏三类展示状态，
+ * 并在回收时释放图片与播放器相关资源。
+ */
 class HomeViewHolder(
+    /** 首页卡片条目视图绑定对象。 */
     private val binding: ItemNoteBinding
 ) : RecyclerView.ViewHolder(binding.root) {
 
+    /**
+     * 绑定首页卡片数据。
+     *
+     * @param item 当前需要渲染的首页卡片模型。
+     * @param onItemClick 条目点击回调。
+     */
     fun bind(item: HomeCardItem, onItemClick: ((HomeCardItem) -> Unit)?) {
         if (item.isSkeleton) {
             bindSkeleton(item)
@@ -48,8 +66,14 @@ class HomeViewHolder(
         binding.root.setOnClickListener { onItemClick?.invoke(item) }
     }
 
+    /**
+     * 条目脱离窗口时的轻量回调。
+     */
     fun onDetached() = Unit
 
+    /**
+     * 回收条目资源。
+     */
     fun recycle() {
         binding.root.setOnClickListener(null)
         binding.ivCover.setImageDrawable(null)
@@ -57,6 +81,11 @@ class HomeViewHolder(
         binding.videoPlayerView.player = null
     }
 
+    /**
+     * 绑定图文卡片展示。
+     *
+     * @param item 当前图文卡片模型。
+     */
     private fun bindImage(item: HomeCardItem) {
         binding.videoPlayerView.visibility = View.GONE
         binding.ivPlayIndicator.visibility = View.GONE
@@ -68,6 +97,11 @@ class HomeViewHolder(
         }
     }
 
+    /**
+     * 绑定视频卡片展示。
+     *
+     * @param item 当前视频卡片模型。
+     */
     private fun bindVideo(item: HomeCardItem) {
         binding.videoPlayerView.visibility = View.GONE
         binding.ivPlayIndicator.visibility = View.VISIBLE
@@ -79,6 +113,11 @@ class HomeViewHolder(
         }
     }
 
+    /**
+     * 绑定骨架屏占位状态。
+     *
+     * @param item 当前骨架卡片模型。
+     */
     private fun bindSkeleton(item: HomeCardItem) {
         binding.coverContainer.layoutParams = binding.coverContainer.layoutParams.apply {
             height = item.coverHeightDp.dpToPx()
@@ -108,6 +147,9 @@ class HomeViewHolder(
         binding.tvLikeCount.background = createTextPlaceholder()
     }
 
+    /**
+     * 清除骨架态遗留的占位背景。
+     */
     private fun clearPlaceholderState() {
         binding.ivCover.background = null
         binding.tvTitle.background = null
@@ -116,6 +158,11 @@ class HomeViewHolder(
         binding.tvMediaBadge.visibility = View.VISIBLE
     }
 
+    /**
+     * 创建文本占位背景。
+     *
+     * @return 用于骨架屏文本区域的圆角纯色背景。
+     */
     private fun createTextPlaceholder(): GradientDrawable {
         return GradientDrawable().apply {
             cornerRadius = 4.dpToPx().toFloat()

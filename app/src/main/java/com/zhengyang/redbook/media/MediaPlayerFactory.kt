@@ -1,7 +1,7 @@
 /**
- * 文件说明： MediaPlayerFactory.kt
- * 作用： 定义当前源码文件的核心实现，承担对应功能模块中的结构声明或行为编排职责。
- * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
+ * 文件说明：MediaPlayerFactory.kt
+ * 作用：集中创建 Media Player Factory 相关对象或默认数据。
+ * 备注：用于标注当前源码文件的职责，便于后续维护与排查。
  */
 package com.zhengyang.redbook.media
 

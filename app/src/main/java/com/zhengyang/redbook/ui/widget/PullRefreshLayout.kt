@@ -1,7 +1,7 @@
 /**
- * 文件说明： PullRefreshLayout.kt
- * 作用： 定义可复用的自定义控件和跨页面共享的界面组件。
- * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
+ * 文件说明：PullRefreshLayout.kt
+ * 作用：定义当前文件在项目中的核心实现与职责。
+ * 备注：用于标注当前源码文件的职责，便于后续维护与排查。
  */
 package com.zhengyang.redbook.ui.widget
 

@@ -1,16 +1,13 @@
 /**
- * 文件说明： AppModule.kt
- * 作用： 声明依赖注入绑定关系，并提供应用运行所需对象。
- * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
+ * 文件说明：AppModule.kt
+ * 作用：定义当前文件在项目中的核心实现与职责。
+ * 备注：用于标注当前源码文件的职责，便于后续维护与排查。
  */
 package com.zhengyang.redbook.di
 
 import com.zhengyang.redbook.data.local.ListDao
 import com.zhengyang.redbook.data.local.RedBookDatabase
 import com.zhengyang.redbook.data.local.RedBookDatabaseMigrations
-import com.zhengyang.redbook.data.remote.HttpService
-import com.zhengyang.redbook.data.remote.ListContentApiService
-import com.zhengyang.redbook.data.remote.ListContentRetrofitApi
 import com.zhengyang.redbook.data.remote.RedBookApiService
 import com.zhengyang.redbook.data.remote.RemoteApiConfig
 import com.zhengyang.redbook.data.remote.interceptor.DefaultHeadersInterceptor
@@ -70,12 +67,6 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideListContentApiService(
-        httpService: HttpService
-    ): ListContentApiService = httpService
-
-    @Provides
-    @Singleton
     fun provideRetrofit(
         okHttpClient: OkHttpClient,
         remoteApiConfig: RemoteApiConfig
@@ -86,14 +77,6 @@ object AppModule {
             .addConverterFactory(GsonConverterFactory.create())
             .addConverterFactory(ScalarsConverterFactory.create())
             .build()
-    }
-
-    @Provides
-    @Singleton
-    fun provideListContentRetrofitApi(
-        retrofit: Retrofit
-    ): ListContentRetrofitApi {
-        return retrofit.create(ListContentRetrofitApi::class.java)
     }
 
     @Provides

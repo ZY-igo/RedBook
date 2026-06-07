@@ -1,7 +1,7 @@
 /**
- * 文件说明： RedBookApplication.kt
- * 作用： 定义应用 Application，并负责全局启动初始化配置。
- * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
+ * 文件说明：RedBookApplication.kt
+ * 作用：负责应用级初始化、全局依赖装配与运行期配置。
+ * 备注：用于标注当前源码文件的职责，便于后续维护与排查。
  */
 package com.zhengyang.redbook
 

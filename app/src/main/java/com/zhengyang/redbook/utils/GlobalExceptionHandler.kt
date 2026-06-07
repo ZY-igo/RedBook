@@ -1,3 +1,8 @@
+/**
+ * 文件说明：GlobalExceptionHandler.kt
+ * 作用：处理 Global Exception Handler 相关异常捕获与兜底逻辑。
+ * 备注：用于标注当前源码文件的职责，便于后续维护与排查。
+ */
 package com.zhengyang.redbook.utils
 
 import android.content.Context

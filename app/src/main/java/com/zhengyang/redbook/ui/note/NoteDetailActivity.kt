@@ -1,6 +1,6 @@
 /**
- * 文件说明： NoteDetailActivity.kt
- * 作用： 承载笔记详情展示、播放控制和相关界面行为。
+ * 文件说明：NoteDetailActivity.kt
+ * 作用：承载笔记详情页的界面初始化、媒体播放、评论互动与状态呈现逻辑。
  * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
  */
 package com.zhengyang.redbook.ui.note
@@ -79,77 +79,133 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
+/**
+ * 笔记详情页活动类
+ *
+ * 负责承载图文详情与视频详情两套展示模式，统一处理媒体播放、评论互动、网络状态监听、
+ * 横竖屏切换以及详情页各类按钮交互。
+ */
 @AndroidEntryPoint
 class NoteDetailActivity : AppCompatActivity() {
 
+    /** 图文详情布局绑定对象，仅在图文模式下初始化。 */
     private var imageBinding: ActivityNoteDetailImageBinding? = null
+    /** 视频详情布局绑定对象，仅在视频模式下初始化。 */
     private var videoBinding: ActivityNoteDetailVideoBinding? = null
+    /** 播放器监听器实例。 */
     private var playerListener: Player.Listener? = null
+    /** 缓存的 ExoPlayer 实例。 */
     private var cachedPlayer: ExoPlayer? = null
+    /** 播放进度轮询任务。 */
     private var progressUpdater: Runnable? = null
+    /** 手势提示自动隐藏任务。 */
     private var gestureHideRunnable: Runnable? = null
+    /** 网络状态回调。 */
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    /** 当前是否处于全屏模式。 */
     private var isFullscreen = false
+    /** 当前是否正在拖动进度条。 */
     private var isSeeking = false
+    /** 待执行的 seek 位置。 */
     private var pendingSeekPositionMs = C.TIME_UNSET
+    /** 最近一次视频宽度。 */
     private var lastVideoWidth = 16
+    /** 最近一次视频高度。 */
     private var lastVideoHeight = 9
+    /** 是否已展示过移动网络提示。 */
     private var hasShownMeteredNetworkHint = false
+    /** 是否已经渲染出首帧画面。 */
     private var hasRenderedFirstFrame = false
+    /** 是否存在待恢复的网络播放任务。 */
     private var pendingNetworkRecovery = false
+    /** 网络恢复后是否继续自动播放。 */
     private var shouldResumeAfterNetworkRecovery = false
+    /** 手势快进时的基准播放位置。 */
     private var gestureSeekBasePositionMs = 0L
+    /** 手势调节音量时的基准音量。 */
     private var gestureVolumeBase = 0
+    /** 手势调节亮度时的基准亮度。 */
     private var gestureBrightnessBase = DEFAULT_GESTURE_BRIGHTNESS
 
+    /** 图文模式图片分页适配器。 */
     private val imagePagerAdapter = NoteImagePagerAdapter()
+    /** 评论列表适配器。 */
     private val commentAdapter = NoteCommentAdapter(
         onLikeClick = ::toggleCommentLike,
         onReplyLikeClick = ::toggleReplyLike,
         onReplyClick = { comment, replyTo -> showCommentDialog(parentComment = comment, replyToAuthor = replyTo) },
         onReplyToggleClick = ::toggleCommentReplies
     )
+    /** 图片分页吸附辅助器。 */
     private val imagePagerSnapHelper = LinearSnapHelper()
+    /** 可选播放倍速列表。 */
     private val playbackSpeeds = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
+    /** 当前评论列表数据。 */
     private val commentItems = mutableListOf<NoteCommentUiModel>()
+    /** 当前笔记点赞数数值。 */
     private var noteLikeCountValue = 0
+    /** 当前笔记收藏数数值。 */
     private var noteCollectCountValue = 0
+    /** 当前是否已关注作者。 */
     private var isFollowingAuthor = false
+    /** 当前是否已点赞笔记。 */
     private var isNoteLiked = false
+    /** 当前是否已收藏笔记。 */
     private var isNoteCollected = false
+    /** 当前评论排序方式。 */
     private var commentSortMode = CommentSortMode.DEFAULT
+    /** 当前显示中的评论输入对话框。 */
     private var activeCommentDialog: AlertDialog? = null
+    /** 当前评论输入对话框状态。 */
     private var activeCommentDialogState: CommentDialogState? = null
+    /** 当前笔记 ID。 */
     private var currentNoteId: String? = null
+    /** 当前作者 ID。 */
     private var currentAuthorId: String? = null
+    /** 当前作者名称。 */
     private var currentAuthorName: String = ""
+    /** 当前笔记标题。 */
     private var currentNoteTitle: String = ""
+    /** 当前视频播放地址。 */
     private var currentVideoUrl: String = ""
+    /** 当前封面地址。 */
     private var currentCoverUrl: String = ""
+    /** 当前图片地址列表。 */
     private var currentImageUrls: List<String> = emptyList()
+    /** 评论图片选择器。 */
     private val commentImagePicker =
         registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
             handlePickedCommentImage(uri)
         }
 
     @Inject
+    /** 笔记详情数据仓库。 */
     lateinit var noteRepository: NoteRepository
 
     @Inject
+    /** 远端资源键映射器。 */
     lateinit var remoteResourceMapper: RemoteResourceMapper
 
+    /** 当前详情页是否为视频模式。 */
     private val isVideo: Boolean by lazy {
         intent.getStringExtra(EXTRA_MEDIA_TYPE) == HomeCardItem.MediaType.VIDEO.name
     }
 
+    /** 播放设置持久化配置。 */
     private val playbackPrefs by lazy {
         getSharedPreferences(PREFS_PLAYBACK, Context.MODE_PRIVATE)
     }
 
+    /** 系统音频管理器。 */
     private val audioManager by lazy {
         getSystemService(AudioManager::class.java)
     }
 
+    /**
+     * 初始化详情页。
+     *
+     * @param savedInstanceState 系统恢复时传入的页面状态快照。
+     */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         volumeControlStream = AudioManager.STREAM_MUSIC
@@ -170,6 +226,9 @@ class NoteDetailActivity : AppCompatActivity() {
         loadRemoteNote()
     }
 
+    /**
+     * 页面进入前台时初始化视频相关能力。
+     */
     override fun onStart() {
         super.onStart()
         if (isVideo) {
@@ -178,6 +237,9 @@ class NoteDetailActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 页面离开前台时暂停视频相关能力并保存进度。
+     */
     override fun onStop() {
         if (isVideo) {
             stopProgressUpdates()
@@ -199,11 +261,19 @@ class NoteDetailActivity : AppCompatActivity() {
         super.onStop()
     }
 
+    /**
+     * 保存当前页面关键状态。
+     *
+     * @param outState 用于保存状态的 Bundle。
+     */
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putBoolean(STATE_FULLSCREEN, isFullscreen)
     }
 
+    /**
+     * 处理系统返回键逻辑。
+     */
     override fun onBackPressed() {
         if (isFullscreen) {
             if (isVideo) {
@@ -216,6 +286,11 @@ class NoteDetailActivity : AppCompatActivity() {
         super.onBackPressed()
     }
 
+    /**
+     * 处理配置变更后的界面适配。
+     *
+     * @param newConfig 最新配置对象。
+     */
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         if (!isVideo) return
@@ -226,6 +301,12 @@ class NoteDetailActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 分发按键事件并同步系统音量状态。
+     *
+     * @param event 当前按键事件。
+     * @return 是否已消费该事件。
+     */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val handled = super.dispatchKeyEvent(event)
         if (
@@ -242,6 +323,9 @@ class NoteDetailActivity : AppCompatActivity() {
         return handled
     }
 
+    /**
+     * 销毁页面并释放长生命周期资源。
+     */
     override fun onDestroy() {
         if (isVideo) {
             unregisterNetworkCallback()
@@ -252,6 +336,9 @@ class NoteDetailActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    /**
+     * 初始化图文详情布局。
+     */
     private fun setupImageLayout() {
         imageBinding = ActivityNoteDetailImageBinding.inflate(layoutInflater)
         setContentView(requireImageBinding().root)
@@ -264,6 +351,9 @@ class NoteDetailActivity : AppCompatActivity() {
         bindImageContent()
     }
 
+    /**
+     * 初始化视频详情布局。
+     */
     private fun setupVideoLayout() {
         videoBinding = ActivityNoteDetailVideoBinding.inflate(layoutInflater)
         setContentView(requireVideoBinding().root)
@@ -277,6 +367,13 @@ class NoteDetailActivity : AppCompatActivity() {
         requireVideoBinding().root.post { refreshVideoActionLabels() }
     }
 
+    /**
+     * 适配顶部栏系统窗口插入并更新系统栏颜色。
+     *
+     * @param topBar 需要处理 inset 的顶部栏视图。
+     * @param backgroundColor 页面背景色。
+     * @param useLightSystemBars 是否使用浅色系统栏图标。
+     */
     private fun applyInsets(topBar: View, backgroundColor: Int, useLightSystemBars: Boolean) {
         val initialTopPadding = topBar.paddingTop
         window.statusBarColor = backgroundColor
@@ -297,6 +394,9 @@ class NoteDetailActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 绑定图文详情头部交互。
+     */
     private fun bindImageHeader() {
         val binding = requireImageBinding()
         binding.buttonBack.setOnClickListener {
@@ -307,6 +407,9 @@ class NoteDetailActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 绑定视频详情头部交互。
+     */
     private fun bindVideoHeader() {
         val binding = requireVideoBinding()
         binding.buttonBack.setOnClickListener {
@@ -317,6 +420,9 @@ class NoteDetailActivity : AppCompatActivity() {
         binding.buttonShare.setOnClickListener { }
     }
 
+    /**
+     * 绑定图文详情主体内容。
+     */
     private fun bindImageContent() {
         val binding = requireImageBinding()
         val author = intent.getStringExtra(EXTRA_AUTHOR).orEmpty()
@@ -325,22 +431,25 @@ class NoteDetailActivity : AppCompatActivity() {
         val coverUrl = currentCoverUrl
 
         noteLikeCountValue = intent.getStringExtra(EXTRA_LIKE_COUNT)?.toIntOrNull() ?: 0
-        noteCollectCountValue = derivedCollectCount().toIntOrNull() ?: 0
+        noteCollectCountValue = 0
         binding.topAuthorName.text = author
         binding.topAvatarText.text = author.take(1)
         binding.noteTitle.text = title
         binding.noteDescription.text = description
         binding.relatedText.text = title
-        binding.publishTimeText.text = derivedPublishTime()
-        binding.locationText.text = derivedLocation(author)
+        binding.publishTimeText.text = ""
+        binding.locationText.text = ""
         binding.commentInput.text = getString(R.string.note_detail_comment_hint)
         bindImagePager(currentImageUrls.ifEmpty { collectImageUrls(fallbackUrl = coverUrl) })
         bindImageActions(author = author, title = title)
-        seedComments(author = author, title = title)
+        commentItems.clear()
         refreshImageActionState()
         refreshCommentSection()
     }
 
+    /**
+     * 绑定视频详情主体内容。
+     */
     private fun bindVideoContent() {
         val binding = requireVideoBinding()
         val author = intent.getStringExtra(EXTRA_AUTHOR).orEmpty()
@@ -354,8 +463,8 @@ class NoteDetailActivity : AppCompatActivity() {
         binding.noteTitle.text = title
         binding.noteDescription.text = description
         binding.likeCount.text = likeCount
-        binding.collectCount.text = derivedCollectCount()
-        binding.commentCount.text = derivedCommentCount()
+        binding.collectCount.text = "0"
+        binding.commentCount.text = "0"
         binding.relatedText.text = title
         configureVideoLayout(lastVideoWidth, lastVideoHeight)
         binding.videoCover.load(coverUrl) {
@@ -371,6 +480,12 @@ class NoteDetailActivity : AppCompatActivity() {
         refreshVideoActionState()
     }
 
+    /**
+     * 绑定图文详情操作区交互。
+     *
+     * @param author 当前作者名称。
+     * @param title 当前笔记标题。
+     */
     private fun bindImageActions(author: String, title: String) {
         val binding = requireImageBinding()
         binding.topFollowButton.setOnClickListener {
@@ -413,6 +528,9 @@ class NoteDetailActivity : AppCompatActivity() {
         binding.commentList.adapter = commentAdapter
     }
 
+    /**
+     * 绑定视频详情操作区交互。
+     */
     private fun bindVideoActions() {
         val binding = requireVideoBinding()
         binding.followButton.setOnClickListener { toggleAuthorFollow(currentAuthorName) }
@@ -424,6 +542,9 @@ class NoteDetailActivity : AppCompatActivity() {
         binding.collectCount.setOnClickListener { toggleNoteCollect() }
     }
 
+    /**
+     * 加载远端笔记详情数据。
+     */
     private fun loadRemoteNote() {
         val noteId = currentNoteId ?: return
         lifecycleScope.launch {
@@ -435,13 +556,16 @@ class NoteDetailActivity : AppCompatActivity() {
                 .onFailure { error ->
                     Toast.makeText(
                         this@NoteDetailActivity,
-                        error.message ?: "笔记详情加载失败",
+                        error.message ?: "绗旇璇︽儏鍔犺浇澶辫触",
                         Toast.LENGTH_SHORT
                     ).show()
                 }
         }
     }
 
+    /**
+     * 加载远端评论列表。
+     */
     private fun loadRemoteComments() {
         val noteId = currentNoteId ?: return
         lifecycleScope.launch {
@@ -457,13 +581,18 @@ class NoteDetailActivity : AppCompatActivity() {
             }.onFailure { error ->
                 Toast.makeText(
                     this@NoteDetailActivity,
-                    error.message ?: "评论加载失败",
+                    error.message ?: "璇勮鍔犺浇澶辫触",
                     Toast.LENGTH_SHORT
                 ).show()
             }
         }
     }
 
+    /**
+     * 将远端详情数据应用到当前页面。
+     *
+     * @param detail 远端返回的笔记详情 DTO。
+     */
     private fun applyRemoteNote(detail: RemoteNoteDetailDto) {
         currentNoteId = detail.id
         currentAuthorId = detail.author.id
@@ -501,9 +630,7 @@ class NoteDetailActivity : AppCompatActivity() {
             binding.noteDescription.text = detail.description
             binding.relatedText.text = detail.title
             binding.publishTimeText.text = formatPublishTime(detail.createdAt)
-            binding.locationText.text = detail.author.location.orEmpty().ifBlank {
-                derivedLocation(detail.author.name)
-            }
+            binding.locationText.text = detail.author.location.orEmpty()
             bindImagePager(currentImageUrls.ifEmpty { collectImageUrls(fallbackUrl = currentCoverUrl) })
             refreshImageActionState()
             binding.commentCount.text = detail.commentCount.toString()
@@ -511,6 +638,11 @@ class NoteDetailActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 切换作者关注状态。
+     *
+     * @param authorName 当前作者名称，用于提示文案展示。
+     */
     private fun toggleAuthorFollow(authorName: String) {
         val authorId = currentAuthorId ?: return
         val targetValue = !isFollowingAuthor
@@ -530,87 +662,16 @@ class NoteDetailActivity : AppCompatActivity() {
                     refreshActionState()
                     Toast.makeText(
                         this@NoteDetailActivity,
-                        error.message ?: "关注操作失败",
+                        error.message ?: "鍏虫敞鎿嶄綔澶辫触",
                         Toast.LENGTH_SHORT
                     ).show()
                 }
         }
     }
 
-    private fun seedComments(author: String, title: String) {
-        commentItems.clear()
-        val now = System.currentTimeMillis()
-        commentItems += NoteCommentUiModel(
-            id = "comment_1",
-            author = "小红薯68DDEA9B",
-            content = "这组图氛围感很足，尤其是 ${title.take(6)} 这一段看着很舒服。",
-            city = "上海",
-            timestamp = now - 31L * 60_000L,
-            likeCount = 12,
-            avatarResId = R.drawable.bg_xhs_avatar_pink,
-            replies = mutableListOf(
-                NoteReplyUiModel(
-                    id = "reply_1",
-                    author = author,
-                    content = "谢谢喜欢，我当时特意等了这个光线。",
-                    city = derivedLocation(author),
-                    timestamp = now - 26L * 60_000L,
-                    likeCount = 5,
-                    isAuthor = true,
-                    avatarResId = R.drawable.bg_xhs_avatar_blue_light
-                ),
-                NoteReplyUiModel(
-                    author = "慢慢看海",
-                    content = "同感，色调很干净。",
-                    city = "广东",
-                    timestamp = now - 22L * 60_000L,
-                    likeCount = 1,
-                    isAuthor = false,
-                    avatarResId = R.drawable.bg_xhs_avatar_orange
-                )
-            )
-        )
-        commentItems += NoteCommentUiModel(
-            id = "comment_2",
-            author = "等到天蓝再看海",
-            content = "想问下这个机位怎么找的，构图比例很好看。",
-            city = "浙江",
-            timestamp = now - 3L * 60L * 60_000L,
-            likeCount = 8,
-            avatarResId = R.drawable.bg_xhs_avatar_teal,
-            replies = mutableListOf(
-                NoteReplyUiModel(
-                    author = author,
-                    content = "站位比栏杆再低一点，手机开 2x 会更稳。",
-                    city = derivedLocation(author),
-                    timestamp = now - 2L * 60L * 60_000L,
-                    likeCount = 2,
-                    isAuthor = true,
-                    avatarResId = R.drawable.bg_xhs_avatar_blue_light
-                )
-            )
-        )
-        commentItems += NoteCommentUiModel(
-            id = "comment_3",
-            author = "夏日气泡水",
-            content = "评论区要是能直接回复作者就更方便了，现在这样就顺手多了。",
-            city = "四川",
-            timestamp = now - 39L * 60_000L,
-            likeCount = 3,
-            avatarResId = R.drawable.bg_xhs_avatar_green
-        )
-        commentItems += NoteCommentUiModel(
-            id = "comment_4",
-            author = author,
-            content = "补充一下：原图是傍晚拍的，后期只轻微提亮过。",
-            city = derivedLocation(author),
-            timestamp = now - 7L * 60_000L,
-            likeCount = 1,
-            isAuthor = true,
-            avatarResId = R.drawable.bg_xhs_avatar_blue_light
-        )
-    }
-
+    /**
+     * 刷新图文模式下的互动按钮状态。
+     */
     private fun refreshImageActionState() {
         val binding = requireImageBinding()
         binding.likeCount.text = noteLikeCountValue.toString()
@@ -624,6 +685,11 @@ class NoteDetailActivity : AppCompatActivity() {
         updateFollowButton()
     }
 
+    /**
+     * 刷新视频模式下的互动按钮状态。
+     *
+     * @param commentCountOverride 可选的评论数覆盖值。
+     */
     private fun refreshVideoActionState(commentCountOverride: Int? = null) {
         val binding = videoBinding ?: return
         val accentColor = ContextCompat.getColor(this, R.color.xhs_accent)
@@ -638,10 +704,16 @@ class NoteDetailActivity : AppCompatActivity() {
         updateVideoFollowButton()
     }
 
+    /**
+     * 根据当前模式刷新互动区状态。
+     */
     private fun refreshActionState() {
         if (isVideo) refreshVideoActionState() else refreshImageActionState()
     }
 
+    /**
+     * 更新图文模式下的关注按钮文案与样式。
+     */
     private fun updateFollowButton() {
         val binding = requireImageBinding()
         binding.topFollowButton.text = if (isFollowingAuthor) "已关注" else "关注"
@@ -658,6 +730,9 @@ class NoteDetailActivity : AppCompatActivity() {
         )
     }
 
+    /**
+     * 更新视频模式下的关注按钮文案与样式。
+     */
     private fun updateVideoFollowButton() {
         val binding = videoBinding ?: return
         binding.followButton.text = if (isFollowingAuthor) "已关注" else getString(R.string.note_detail_follow)
@@ -674,6 +749,9 @@ class NoteDetailActivity : AppCompatActivity() {
         )
     }
 
+    /**
+     * 切换笔记点赞状态。
+     */
     private fun toggleNoteLike() {
         val noteId = currentNoteId ?: return
         val targetValue = !isNoteLiked
@@ -688,13 +766,16 @@ class NoteDetailActivity : AppCompatActivity() {
                     refreshActionState()
                     Toast.makeText(
                         this@NoteDetailActivity,
-                        error.message ?: "点赞失败",
+                        error.message ?: "鐐硅禐澶辫触",
                         Toast.LENGTH_SHORT
                     ).show()
                 }
         }
     }
 
+    /**
+     * 切换笔记收藏状态。
+     */
     private fun toggleNoteCollect() {
         val noteId = currentNoteId ?: return
         val targetValue = !isNoteCollected
@@ -709,13 +790,16 @@ class NoteDetailActivity : AppCompatActivity() {
                     refreshActionState()
                     Toast.makeText(
                         this@NoteDetailActivity,
-                        error.message ?: "收藏失败",
+                        error.message ?: "鏀惰棌澶辫触",
                         Toast.LENGTH_SHORT
                     ).show()
                 }
         }
     }
 
+    /**
+     * 刷新评论区列表与标题状态。
+     */
     private fun refreshCommentSection() {
         val binding = requireImageBinding()
         val comments = when (commentSortMode) {
@@ -731,6 +815,11 @@ class NoteDetailActivity : AppCompatActivity() {
         binding.commentSectionTitle.text = "共 ${commentItems.size} 条评论"
     }
 
+    /**
+     * 展示评论排序弹窗。
+     *
+     * @param anchor 弹窗锚点视图。
+     */
     private fun showCommentSortPopup(anchor: View) {
         val contentView = LayoutInflater.from(this).inflate(R.layout.layout_comment_sort_popup, null)
         val popupWindow = PopupWindow(
@@ -772,6 +861,11 @@ class NoteDetailActivity : AppCompatActivity() {
         popupWindow.showAsDropDown(anchor, 0, dpToPx(this, 6), Gravity.START)
     }
 
+    /**
+     * 切换评论点赞状态。
+     *
+     * @param comment 当前评论模型。
+     */
     private fun toggleCommentLike(comment: NoteCommentUiModel) {
         val targetValue = !comment.isLiked
         comment.isLiked = targetValue
@@ -785,18 +879,28 @@ class NoteDetailActivity : AppCompatActivity() {
                     refreshCommentSection()
                     Toast.makeText(
                         this@NoteDetailActivity,
-                        error.message ?: "评论点赞失败",
+                        error.message ?: "璇勮鐐硅禐澶辫触",
                         Toast.LENGTH_SHORT
                     ).show()
                 }
         }
     }
 
+    /**
+     * 展开或收起评论回复列表。
+     *
+     * @param comment 当前评论模型。
+     */
     private fun toggleCommentReplies(comment: NoteCommentUiModel) {
         comment.isReplyExpanded = !comment.isReplyExpanded
         refreshCommentSection()
     }
 
+    /**
+     * 切换评论回复点赞状态。
+     *
+     * @param reply 当前回复模型。
+     */
     private fun toggleReplyLike(reply: NoteReplyUiModel) {
         val targetValue = !reply.isLiked
         reply.isLiked = targetValue
@@ -810,13 +914,20 @@ class NoteDetailActivity : AppCompatActivity() {
                     refreshCommentSection()
                     Toast.makeText(
                         this@NoteDetailActivity,
-                        error.message ?: "回复点赞失败",
+                        error.message ?: "鍥炲鐐硅禐澶辫触",
                         Toast.LENGTH_SHORT
                     ).show()
                 }
         }
     }
 
+    /**
+     * 展示评论输入对话框。
+     *
+     * @param parentComment 当前回复所属父评论；为空表示发布一级评论。
+     * @param replyToAuthor 当前回复目标作者名称；为空表示普通评论。
+     * @param selectedImageUri 当前预选中的图片地址。
+     */
     private fun showCommentDialog(
         parentComment: NoteCommentUiModel? = null,
         replyToAuthor: String? = null,
@@ -893,6 +1004,13 @@ class NoteDetailActivity : AppCompatActivity() {
         dialog.show()
     }
 
+    /**
+     * 提交评论或回复。
+     *
+     * @param content 评论文本内容。
+     * @param parentComment 当前回复所属父评论；为空表示一级评论。
+     * @param imageUri 评论附图地址。
+     */
     private fun publishComment(
         content: String,
         parentComment: NoteCommentUiModel?,
@@ -928,47 +1046,20 @@ class NoteDetailActivity : AppCompatActivity() {
             }
         }
         return
-        val now = System.currentTimeMillis()
-        if (parentComment == null) {
-            commentItems.add(
-                0,
-                NoteCommentUiModel(
-                    id = "comment_$now",
-                    author = "我",
-                    content = content,
-                    city = "当前城市",
-                    timestamp = now,
-                    likeCount = 0,
-                    avatarResId = R.drawable.bg_xhs_avatar_blue_light,
-                    imageUri = imageUri
-                )
-            )
-            Toast.makeText(this, "评论已发布", Toast.LENGTH_SHORT).show()
-        } else {
-            parentComment.replies.add(
-                0,
-                NoteReplyUiModel(
-                    author = "我",
-                    content = content,
-                    city = "当前城市",
-                    timestamp = now,
-                    likeCount = 0,
-                    isAuthor = false,
-                    avatarResId = R.drawable.bg_xhs_avatar_blue_light,
-                    imageUri = imageUri
-                )
-            )
-            parentComment.isReplyExpanded = true
-            Toast.makeText(this, "回复已发送", Toast.LENGTH_SHORT).show()
-        }
-        refreshCommentSection()
-        scrollToCommentSection()
     }
 
+    /**
+     * 打开评论图片选择器。
+     */
     private fun openCommentImagePicker() {
         commentImagePicker.launch("image/*")
     }
 
+    /**
+     * 处理用户选择的评论图片。
+     *
+     * @param uri 当前选择结果。
+     */
     private fun handlePickedCommentImage(uri: Uri?) {
         val uriString = uri?.toString() ?: return
         val dialogState = activeCommentDialogState
@@ -980,9 +1071,14 @@ class NoteDetailActivity : AppCompatActivity() {
         renderCommentDialogImageState(dialogState)
     }
 
+    /**
+     * 渲染评论对话框中的图片选择状态。
+     *
+     * @param state 当前评论对话框状态。
+     */
     private fun renderCommentDialogImageState(state: CommentDialogState) {
         val hasImage = !state.selectedImageUri.isNullOrBlank()
-        state.imageButton.text = if (hasImage) "更换图片" else "添加图片"
+        state.imageButton.text = if (hasImage) "鏇存崲鍥剧墖" else "娣诲姞鍥剧墖"
         state.imagePreviewContainer.visibility = if (hasImage) View.VISIBLE else View.GONE
         if (hasImage) {
             state.imagePreview.load(state.selectedImageUri)
@@ -991,6 +1087,9 @@ class NoteDetailActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 将页面滚动到评论区附近。
+     */
     private fun scrollToCommentSection() {
         val binding = requireImageBinding()
         binding.scrollContainer.post {
@@ -998,6 +1097,11 @@ class NoteDetailActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 绑定图文详情图片分页器。
+     *
+     * @param imageUrls 当前图片地址列表。
+     */
     private fun bindImagePager(imageUrls: List<String>) {
         val binding = requireImageBinding()
         binding.detailImagePager.layoutManager =
@@ -1025,6 +1129,9 @@ class NoteDetailActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 根据当前图片比例更新分页器高度。
+     */
     private fun updatePagerHeight() {
         val binding = requireImageBinding()
         val firstChild = binding.detailImagePager.getChildAt(0) ?: return
@@ -1034,6 +1141,11 @@ class NoteDetailActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 更新图片分页指示器。
+     *
+     * @param selectedIndex 当前选中页索引。
+     */
     private fun updatePagerIndicator(selectedIndex: Int) {
         val binding = requireImageBinding()
         val itemCount = imagePagerAdapter.itemCount
@@ -1056,6 +1168,11 @@ class NoteDetailActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 获取当前图片分页位置。
+     *
+     * @return 当前可见图片索引。
+     */
     private fun currentImagePosition(): Int {
         val binding = requireImageBinding()
         val layoutManager = binding.detailImagePager.layoutManager ?: return 0
@@ -1063,6 +1180,11 @@ class NoteDetailActivity : AppCompatActivity() {
         return layoutManager.getPosition(snapView).coerceAtLeast(0)
     }
 
+    /**
+     * 切换图文详情全屏模式。
+     *
+     * @param enabled 是否启用全屏模式。
+     */
     private fun setImageFullscreen(enabled: Boolean) {
         if (isVideo || isFullscreen == enabled) return
         isFullscreen = enabled
@@ -1072,6 +1194,9 @@ class NoteDetailActivity : AppCompatActivity() {
         requireImageBinding().detailImagePager.post { updatePagerHeight() }
     }
 
+    /**
+     * 应用图文模式下的全屏与普通态界面配置。
+     */
     private fun applyImageModeUi() {
         val binding = imageBinding ?: return
         WindowCompat.setDecorFitsSystemWindows(window, !isFullscreen)
@@ -1099,6 +1224,12 @@ class NoteDetailActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 收集图文详情可用的图片地址列表。
+     *
+     * @param fallbackUrl 缺省图片地址。
+     * @return 去重和兜底后的图片地址列表。
+     */
     private fun collectImageUrls(fallbackUrl: String): List<String> {
         val explicitUrls = intent.getStringArrayListExtra(EXTRA_IMAGE_URLS).orEmpty()
             .filter { it.isNotBlank() }
@@ -1600,7 +1731,7 @@ class NoteDetailActivity : AppCompatActivity() {
     }
 
     private fun updateMuteButton() {
-        videoBinding?.muteButton?.text = if (isMuted()) "取消静音" else "静音"
+        videoBinding?.muteButton?.text = if (isMuted()) "鍙栨秷闈欓煶" else "闈欓煶"
     }
 
     private fun updateSpeedButton() {
@@ -1752,24 +1883,6 @@ class NoteDetailActivity : AppCompatActivity() {
         return !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
     }
 
-    private fun derivedCollectCount(): String {
-        return ((intent.getStringExtra(EXTRA_LIKE_COUNT)?.toIntOrNull() ?: 0) / 2).toString()
-    }
-
-    private fun derivedCommentCount(): String {
-        return ((intent.getStringExtra(EXTRA_LIKE_COUNT)?.toIntOrNull() ?: 0) / 6).toString()
-    }
-
-    private fun derivedPublishTime(): String {
-        return "昨天 23:23"
-    }
-
-    private fun derivedLocation(author: String): String {
-        val presetLocations = listOf("江苏", "浙江", "北京", "广东", "四川", "上海")
-        val index = author.hashCode().mod(presetLocations.size)
-        return presetLocations[index]
-    }
-
     private fun formatPublishTime(createdAt: String): String {
         val instant = parseInstantMillis(createdAt) ?: return createdAt
         return publishTimeFormatter.format(Instant.ofEpochMilli(instant).atZone(ZoneId.systemDefault()))
@@ -1852,25 +1965,49 @@ class NoteDetailActivity : AppCompatActivity() {
     }
 
     companion object {
+        /** 日志标签。 */
         private const val TAG = "NoteDetailActivity"
+        /** 笔记 ID 传参键。 */
         private const val EXTRA_NOTE_ID = "extra_note_id"
+        /** 标题传参键。 */
         private const val EXTRA_TITLE = "extra_title"
+        /** 作者传参键。 */
         private const val EXTRA_AUTHOR = "extra_author"
+        /** 点赞数传参键。 */
         private const val EXTRA_LIKE_COUNT = "extra_like_count"
+        /** 描述传参键。 */
         private const val EXTRA_DESCRIPTION = "extra_description"
+        /** 媒体类型传参键。 */
         private const val EXTRA_MEDIA_TYPE = "extra_media_type"
+        /** 图片列表传参键。 */
         private const val EXTRA_IMAGE_URLS = "extra_image_urls"
+        /** 单图地址传参键。 */
         private const val EXTRA_IMAGE_URL = "extra_image_url"
+        /** 视频地址传参键。 */
         private const val EXTRA_VIDEO_URL = "extra_video_url"
+        /** 封面地址传参键。 */
         private const val EXTRA_COVER_URL = "extra_cover_url"
 
+        /** 播放配置存储文件名。 */
         private const val PREFS_PLAYBACK = "note_video_playback"
+        /** 播放倍速配置键。 */
         private const val KEY_PLAYBACK_SPEED = "playback_speed"
+        /** 静音状态配置键。 */
         private const val KEY_MUTED = "muted"
+        /** 全屏状态保存键。 */
         private const val STATE_FULLSCREEN = "state_fullscreen"
+        /** 手势亮度默认值。 */
         private const val DEFAULT_GESTURE_BRIGHTNESS = 0.5f
+        /** 发布时间显示格式。 */
         private val publishTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("MM-dd HH:mm")
 
+        /**
+         * 创建详情页跳转 Intent。
+         *
+         * @param context 当前上下文。
+         * @param item 需要展示的首页卡片模型。
+         * @return 配置完成的详情页 Intent。
+         */
         fun createIntent(context: Context, item: HomeCardItem): Intent {
             return Intent(context, NoteDetailActivity::class.java).apply {
                 putExtra(EXTRA_NOTE_ID, item.id)
@@ -1888,12 +2025,23 @@ class NoteDetailActivity : AppCompatActivity() {
     }
 }
 
+/**
+ * 评论排序模式枚举。
+ */
 private enum class CommentSortMode {
+    /** 默认排序。 */
     DEFAULT,
+    /** 按最新时间排序。 */
     LATEST,
+    /** 按点赞数排序。 */
     MOST_LIKED
 }
 
+/**
+ * 将评论排序模式转换为后端请求值。
+ *
+ * @return 对应后端接口使用的排序字符串。
+ */
 private fun CommentSortMode.backendValue(): String {
     return when (this) {
         CommentSortMode.DEFAULT -> "default"
@@ -1902,47 +2050,95 @@ private fun CommentSortMode.backendValue(): String {
     }
 }
 
+/**
+ * 评论输入对话框状态。
+ *
+ * 用于在评论输入弹窗打开期间持有输入控件和临时图片选择状态。
+ */
 private data class CommentDialogState(
+    /** 当前对话框实例。 */
     val dialog: AlertDialog,
+    /** 评论输入框。 */
     val input: EditText,
+    /** 图片选择按钮。 */
     val imageButton: TextView,
+    /** 图片预览容器。 */
     val imagePreviewContainer: FrameLayout,
+    /** 图片预览视图。 */
     val imagePreview: ImageView,
+    /** 移除图片按钮。 */
     val removeImageButton: ImageView,
+    /** 当前回复所属父评论。 */
     val parentComment: NoteCommentUiModel?,
+    /** 当前回复目标作者。 */
     val replyToAuthor: String?,
+    /** 当前选择的图片地址。 */
     var selectedImageUri: String?
 )
 
+/**
+ * 评论展示模型。
+ */
 private data class NoteCommentUiModel(
+    /** 评论唯一标识。 */
     val id: String,
+    /** 评论作者。 */
     val author: String,
+    /** 评论内容。 */
     val content: String,
+    /** 评论城市信息。 */
     val city: String,
+    /** 评论时间戳。 */
     val timestamp: Long,
+    /** 当前点赞数。 */
     var likeCount: Int,
+    /** 当前是否已点赞。 */
     var isLiked: Boolean = false,
+    /** 当前评论是否为作者本人发布。 */
     val isAuthor: Boolean = false,
+    /** 头像背景资源 ID。 */
     val avatarResId: Int,
+    /** 评论图片地址。 */
     val imageUri: String? = null,
+    /** 回复列表。 */
     val replies: MutableList<NoteReplyUiModel> = mutableListOf(),
+    /** 是否已展开全部回复。 */
     var isReplyExpanded: Boolean = false
 )
 
+/**
+ * 评论回复展示模型。
+ */
 private data class NoteReplyUiModel(
+    /** 回复唯一标识。 */
     val id: String = "",
+    /** 回复作者。 */
     val author: String,
+    /** 回复内容。 */
     val content: String,
+    /** 回复城市信息。 */
     val city: String,
+    /** 回复时间戳。 */
     val timestamp: Long,
+    /** 当前点赞数。 */
     var likeCount: Int,
+    /** 当前是否已点赞。 */
     var isLiked: Boolean = false,
+    /** 当前回复是否为作者本人发布。 */
     val isAuthor: Boolean,
+    /** 头像背景资源 ID。 */
     val avatarResId: Int,
+    /** 回复图片地址。 */
     val imageUri: String? = null,
+    /** 被回复用户名。 */
     val replyToName: String? = null
 )
 
+/**
+ * 评论列表适配器。
+ *
+ * 负责渲染评论与回复层级，并转发点赞、回复和展开收起交互。
+ */
 private class NoteCommentAdapter(
     private val onLikeClick: (NoteCommentUiModel) -> Unit,
     private val onReplyLikeClick: (NoteReplyUiModel) -> Unit,
@@ -1950,14 +2146,23 @@ private class NoteCommentAdapter(
     private val onReplyToggleClick: (NoteCommentUiModel) -> Unit
 ) : RecyclerView.Adapter<NoteCommentAdapter.NoteCommentViewHolder>() {
 
+    /** 当前评论列表数据。 */
     private val items = mutableListOf<NoteCommentUiModel>()
 
+    /**
+     * 提交评论列表数据。
+     *
+     * @param comments 最新评论集合。
+     */
     fun submitList(comments: List<NoteCommentUiModel>) {
         items.clear()
         items.addAll(comments)
         notifyDataSetChanged()
     }
 
+    /**
+     * 创建评论条目持有者。
+     */
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): NoteCommentViewHolder {
         val binding = ItemNoteCommentBinding.inflate(
             android.view.LayoutInflater.from(parent.context),
@@ -1967,6 +2172,9 @@ private class NoteCommentAdapter(
         return NoteCommentViewHolder(binding)
     }
 
+    /**
+     * 绑定指定位置的评论条目。
+     */
     override fun onBindViewHolder(holder: NoteCommentViewHolder, position: Int) {
         holder.bind(
             comment = items[position],
@@ -1977,12 +2185,19 @@ private class NoteCommentAdapter(
         )
     }
 
+    /** 返回评论条目数量。 */
     override fun getItemCount(): Int = items.size
 
+    /**
+     * 评论条目视图持有者。
+     */
     class NoteCommentViewHolder(
         private val binding: ItemNoteCommentBinding
     ) : RecyclerView.ViewHolder(binding.root) {
 
+        /**
+         * 绑定评论及其回复内容。
+         */
         fun bind(
             comment: NoteCommentUiModel,
             onLikeClick: (NoteCommentUiModel) -> Unit,
@@ -2019,6 +2234,9 @@ private class NoteCommentAdapter(
             bindReplies(comment, onReplyLikeClick, onReplyClick, onReplyToggleClick)
         }
 
+        /**
+         * 绑定评论回复区。
+         */
         private fun bindReplies(
             comment: NoteCommentUiModel,
             onReplyLikeClick: (NoteReplyUiModel) -> Unit,
@@ -2080,6 +2298,9 @@ private class NoteCommentAdapter(
             binding.commentReplyToggle.setOnClickListener { onReplyToggleClick(comment) }
         }
 
+        /**
+         * 更新回复点赞视图状态。
+         */
         private fun updateReplyLikeState(
             replyBinding: ItemNoteCommentReplyBinding,
             reply: NoteReplyUiModel
@@ -2097,6 +2318,12 @@ private class NoteCommentAdapter(
     }
 }
 
+/**
+ * 将时间戳转换为相对时间文案。
+ *
+ * @param timestamp 原始时间戳。
+ * @return 面向用户展示的相对时间字符串。
+ */
 private fun relativeTimeLabel(timestamp: Long): String {
     val diffMinutes = ((System.currentTimeMillis() - timestamp) / 60_000L).coerceAtLeast(0L)
     return when {
@@ -2107,22 +2334,43 @@ private fun relativeTimeLabel(timestamp: Long): String {
     }
 }
 
+/**
+ * 将 dp 转换为像素值。
+ *
+ * @param context 当前上下文。
+ * @param valueDp 需要转换的 dp 值。
+ * @return 对应像素值。
+ */
 private fun dpToPx(context: Context, valueDp: Int): Int {
     return (valueDp * context.resources.displayMetrics.density).roundToInt()
 }
 
+/**
+ * 图文详情图片分页适配器。
+ */
 private class NoteImagePagerAdapter : RecyclerView.Adapter<NoteImagePagerAdapter.NoteImageViewHolder>() {
 
+    /** 当前图片地址列表。 */
     private val items = mutableListOf<String>()
+    /** 图片点击回调。 */
     var onImageTap: (() -> Unit)? = null
+    /** 当前是否处于全屏图片模式。 */
     var isFullscreen: Boolean = false
 
+    /**
+     * 提交图片列表数据。
+     *
+     * @param imageUrls 最新图片地址列表。
+     */
     fun submitList(imageUrls: List<String>) {
         items.clear()
         items.addAll(imageUrls)
         notifyDataSetChanged()
     }
 
+    /**
+     * 创建图片分页条目持有者。
+     */
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): NoteImageViewHolder {
         val binding = ItemNoteDetailImageBinding.inflate(
             android.view.LayoutInflater.from(parent.context),
@@ -2132,6 +2380,9 @@ private class NoteImagePagerAdapter : RecyclerView.Adapter<NoteImagePagerAdapter
         return NoteImageViewHolder(binding)
     }
 
+    /**
+     * 绑定指定位置的图片分页条目。
+     */
     override fun onBindViewHolder(holder: NoteImageViewHolder, position: Int) {
         holder.bind(
             imageUrl = items[position],
@@ -2140,12 +2391,19 @@ private class NoteImagePagerAdapter : RecyclerView.Adapter<NoteImagePagerAdapter
         )
     }
 
+    /** 返回图片条目数量。 */
     override fun getItemCount(): Int = items.size
 
+    /**
+     * 图片分页条目持有者。
+     */
     class NoteImageViewHolder(
         private val binding: ItemNoteDetailImageBinding
     ) : RecyclerView.ViewHolder(binding.root) {
 
+        /**
+         * 绑定单张详情图片。
+         */
         fun bind(
             imageUrl: String,
             isFullscreen: Boolean,
@@ -2164,3 +2422,5 @@ private class NoteImagePagerAdapter : RecyclerView.Adapter<NoteImagePagerAdapter
         }
     }
 }
+
+

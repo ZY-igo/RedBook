@@ -1,3 +1,8 @@
+/**
+ * 文件说明：HomeFollowingSectionRenderer.kt
+ * 作用：负责首页关注页顶部区块与推荐用户区的视图渲染逻辑。
+ * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
+ */
 package com.zhengyang.redbook.ui.home
 
 import android.content.Context
@@ -14,12 +19,31 @@ import com.zhengyang.redbook.R
 import com.zhengyang.redbook.databinding.FragmentHomeBinding
 import com.zhengyang.redbook.utils.dpToPx
 
+/**
+ * 首页关注区渲染器
+ *
+ * 负责根据首页状态渲染关注页空态、推荐用户列表、已关注用户故事条和关注流列表。
+ * 该类只处理关注页顶部内容区的视图拼装，不负责状态计算。
+ */
 class HomeFollowingSectionRenderer(
+    /** 当前页面上下文。 */
     private val context: Context,
+
+    /** 首页视图绑定对象。 */
     private val binding: FragmentHomeBinding,
+
+    /** 点击关注推荐用户时的回调。 */
     private val onFollowUser: (String) -> Unit,
+
+    /** 点击关闭推荐用户时的回调。 */
     private val onDismissSuggestion: (String) -> Unit
 ) {
+    /**
+     * 渲染关注页顶部区块。
+     *
+     * @param state 最新首页状态。
+     * @param adapter 关注流列表适配器。
+     */
     fun render(state: HomeUiState, adapter: HomeAdapter) {
         val hasFollowing = state.followingUsers.isNotEmpty()
         binding.followingEmptyContainer.visibility = if (hasFollowing) View.GONE else View.VISIBLE
@@ -38,6 +62,11 @@ class HomeFollowingSectionRenderer(
         adapter.submitList(state.followingFeedItems)
     }
 
+    /**
+     * 渲染推荐用户列表。
+     *
+     * @param users 推荐用户集合。
+     */
     private fun renderSuggestions(users: List<FollowingUserItem>) {
         binding.followingSuggestionContainer.removeAllViews()
         users.forEach { user ->
@@ -45,6 +74,11 @@ class HomeFollowingSectionRenderer(
         }
     }
 
+    /**
+     * 渲染已关注用户故事条。
+     *
+     * @param users 已关注用户集合。
+     */
     private fun renderStories(users: List<FollowingUserItem>) {
         binding.followingStoryContainer.removeAllViews()
         users.forEach { user ->
@@ -75,6 +109,12 @@ class HomeFollowingSectionRenderer(
         }
     }
 
+    /**
+     * 创建单个推荐用户卡片视图。
+     *
+     * @param user 当前推荐用户模型。
+     * @return 可直接加入容器的推荐卡片视图。
+     */
     private fun createSuggestionView(user: FollowingUserItem): View {
         return LinearLayout(context).apply {
             layoutParams = LinearLayout.LayoutParams(
@@ -148,6 +188,15 @@ class HomeFollowingSectionRenderer(
         }
     }
 
+    /**
+     * 创建用户头像视图。
+     *
+     * @param user 当前用户模型。
+     * @param sizeDp 头像尺寸。
+     * @param textSizeSp 头像文字字号。
+     * @param compact 是否使用紧凑样式。
+     * @return 用户头像文本视图。
+     */
     private fun createAvatarView(
         user: FollowingUserItem,
         sizeDp: Int,
@@ -171,5 +220,11 @@ class HomeFollowingSectionRenderer(
         }
     }
 
+    /**
+     * 将 dp 转换为像素值。
+     *
+     * @param value 需要转换的 dp 数值。
+     * @return 对应像素值。
+     */
     private fun dp(value: Int): Int = value.dpToPx()
 }

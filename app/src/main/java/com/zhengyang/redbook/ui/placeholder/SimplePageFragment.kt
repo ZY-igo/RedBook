@@ -1,7 +1,7 @@
 /**
- * 文件说明： SimplePageFragment.kt
- * 作用： 提供占位页面实现，用于补齐导航流程或演示界面。
- * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
+ * 文件说明：SimplePageFragment.kt
+ * 作用：承载 Simple Page Fragment 相关页面区块的视图渲染、状态呈现与交互逻辑。
+ * 备注：用于标注当前源码文件的职责，便于后续维护与排查。
  */
 package com.zhengyang.redbook.ui.placeholder
 

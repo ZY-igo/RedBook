@@ -1,3 +1,8 @@
+/**
+ * 文件说明：RemoteResourceMapper.kt
+ * 作用：负责 Remote Resource Mapper 相关数据模型之间的转换。
+ * 备注：用于标注当前源码文件的职责，便于后续维护与排查。
+ */
 package com.zhengyang.redbook.data.remote
 
 import android.app.Application

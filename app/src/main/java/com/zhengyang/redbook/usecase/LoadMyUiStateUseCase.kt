@@ -1,7 +1,7 @@
 /**
- * 文件说明： LoadMyUiStateUseCase.kt
- * 作用： 封装单一业务动作，为界面层提供清晰的业务入口。
- * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
+ * 文件说明：LoadMyUiStateUseCase.kt
+ * 作用：封装 Load My Ui State Use Case 相关业务动作与场景编排逻辑。
+ * 备注：用于标注当前源码文件的职责，便于后续维护与排查。
  */
 package com.zhengyang.redbook.usecase
 

@@ -1,3 +1,8 @@
+/**
+ * 文件说明：HomeFragment.kt
+ * 作用：承载首页模块的视图渲染、状态消费与交互分发逻辑。
+ * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
+ */
 package com.zhengyang.redbook.ui.home
 
 import android.content.Intent
@@ -35,25 +40,49 @@ import com.zhengyang.redbook.utils.dpToPx
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
+/**
+ * 首页主界面片段
+ *
+ * 负责协调发现流、关注流、抽屉、频道管理和网络提示等首页交互，
+ * 并根据 [HomeViewModel] 输出的状态刷新页面内容。
+ */
 @AndroidEntryPoint
 class HomeFragment : Fragment(R.layout.fragment_home) {
 
+    /** 首页视图绑定对象，仅在 View 生命周期内有效。 */
     private var _binding: FragmentHomeBinding? = null
+    /** 非空视图绑定访问器，仅允许在视图已创建阶段访问。 */
     private val binding get() = _binding!!
+    /** 首页状态提供者，负责产出页面状态与一次性事件。 */
     private val viewModel: HomeViewModel by viewModels()
 
+    /** 发现流列表适配器。 */
     private val adapter = HomeAdapter()
+    /** 关注流列表适配器。 */
     private val followingAdapter = HomeAdapter()
+    /** 频道管理协调器，负责维护频道选择与编辑状态。 */
     private val channelCoordinator = HomeChannelCoordinator()
+    /** 网络断开时展示的提示条。 */
     private var networkSnackbar: Snackbar? = null
+    /** 网络状态回调，用于监听首页可见期间的网络变化。 */
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
+    /** 关注页顶部区块渲染器。 */
     private var followingSectionRenderer: HomeFollowingSectionRenderer? = null
+    /** 分类栏与频道面板渲染器。 */
     private var channelRenderer: HomeChannelRenderer? = null
 
+    /** 当前频道管理面板是否处于展开状态。 */
     private var isCategoryExpanded = false
+    /** 当前选中的顶部页签。 */
     private var currentTopTab = TopTab.DISCOVER
 
+    /**
+     * 初始化首页视图与交互。
+     *
+     * @param view 当前 Fragment 根视图。
+     * @param savedInstanceState 系统恢复时传入的状态快照。
+     */
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         _binding = FragmentHomeBinding.bind(view)
@@ -90,6 +119,9 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         renderTopTab(currentTopTab)
     }
 
+    /**
+     * 处理系统栏和抽屉区域的安全内边距。
+     */
     private fun applySystemBarInsets() {
         val baseTopMargin = (binding.topBar.layoutParams as ViewGroup.MarginLayoutParams).topMargin
         ViewCompat.setOnApplyWindowInsetsListener(binding.topBar) { topBar, insets ->
@@ -129,6 +161,9 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         binding.drawerFooter.doOnAttach { ViewCompat.requestApplyInsets(it) }
     }
 
+    /**
+     * 初始化顶部页签文案与点击事件。
+     */
     private fun setupTopTabs() {
         binding.tabFollowing.text = getString(R.string.tab_following)
         binding.tabDiscover.text = getString(R.string.tab_discover)
@@ -139,6 +174,11 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         binding.tabNearby.setOnClickListener { renderTopTab(TopTab.NEARBY) }
     }
 
+    /**
+     * 切换顶部页签并刷新对应内容区。
+     *
+     * @param tab 当前需要展示的顶部页签。
+     */
     private fun renderTopTab(tab: TopTab) {
         currentTopTab = tab
         binding.tabFollowing.isSelected = tab == TopTab.FOLLOWING
@@ -161,6 +201,9 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         targetCategory?.let(::renderCategory)
     }
 
+    /**
+     * 初始化抽屉内容与抽屉状态监听。
+     */
     private fun setupDrawer() {
         binding.drawerLayout.setScrimColor(requireContext().getColor(R.color.xhs_scrim))
         binding.drawerLayout.addDrawerListener(object : DrawerLayout.SimpleDrawerListener() {
@@ -212,6 +255,11 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         updateSystemBarsForDrawer(isDrawerOpen = false)
     }
 
+    /**
+     * 根据抽屉开合状态调整系统栏外观。
+     *
+     * @param isDrawerOpen 当前抽屉是否处于打开状态。
+     */
     private fun updateSystemBarsForDrawer(isDrawerOpen: Boolean) {
         val window = activity?.window ?: return
         val bgColor = requireContext().getColor(if (isDrawerOpen) R.color.xhs_drawer_bg else R.color.xhs_bg)
@@ -324,6 +372,9 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         viewModel.refreshDiscover(category)
     }
 
+    /**
+     * 收集首页状态流与一次性事件流。
+     */
     private fun collectUiState() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -337,6 +388,11 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         }
     }
 
+    /**
+     * 根据最新首页状态刷新页面内容。
+     *
+     * @param state 最新首页状态。
+     */
     private fun renderHomeState(state: HomeUiState) {
         if (!state.isDiscoverRefreshing) {
             binding.discoverRefreshLayout.setRefreshing(false)
@@ -349,6 +405,11 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         followingSectionRenderer?.render(state, followingAdapter)
     }
 
+    /**
+     * 处理首页一次性事件。
+     *
+     * @param event 需要即时消费的首页事件。
+     */
     private fun handleUiEvent(event: HomeUiEvent) {
         when (event) {
             is HomeUiEvent.ShowMessage -> {
@@ -475,6 +536,12 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         }
     }
 
+    /**
+     * 判断列表是否需要触发加载更多。
+     *
+     * @param recyclerView 当前滚动中的列表控件。
+     * @return `true` 表示最后可见位置已接近尾部。
+     */
     private fun shouldLoadMore(recyclerView: RecyclerView): Boolean {
         val layoutManager = recyclerView.layoutManager ?: return false
         val itemCount = recyclerView.adapter?.itemCount ?: return false
@@ -496,6 +563,9 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         super.onStop()
     }
 
+    /**
+     * 注册默认网络回调。
+     */
     private fun registerNetworkCallback() {
         if (networkCallback != null) return
         val connectivityManager = context?.getSystemService(ConnectivityManager::class.java)
@@ -525,6 +595,9 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         }
     }
 
+    /**
+     * 注销默认网络回调。
+     */
     private fun unregisterNetworkCallback() {
         val callback = networkCallback ?: return
         val connectivityManager = context?.getSystemService(ConnectivityManager::class.java)
@@ -537,12 +610,21 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         networkCallback = null
     }
 
+    /**
+     * 判断当前是否具备可用网络能力。
+     *
+     * @param connectivityManager 网络连接管理器。
+     * @return `true` 表示存在可访问互联网的活动网络。
+     */
     private fun isNetworkAvailable(connectivityManager: ConnectivityManager): Boolean {
         val network = connectivityManager.activeNetwork ?: return false
         val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
+    /**
+     * 展示网络断开提示。
+     */
     private fun showNetworkLostMessage() {
         if (!isAdded) return
         if (networkSnackbar?.isShown == true) return
@@ -555,6 +637,9 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
 
     private fun dp(value: Int): Int = value.dpToPx()
 
+    /**
+     * 清理首页视图引用与短期资源。
+     */
     override fun onDestroyView() {
         networkSnackbar?.dismiss()
         networkSnackbar = null
@@ -567,18 +652,28 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     }
 
     private data class DrawerRowModel(
+        /** 抽屉行左侧图标资源。 */
         val iconRes: Int,
+        /** 抽屉行标题文案。 */
         val title: String,
+        /** 抽屉行可选角标文案。 */
         val badge: String? = null
     )
 
+    /**
+     * 首页顶部一级页签枚举。
+     */
     private enum class TopTab {
+        /** 关注页签。 */
         FOLLOWING,
+        /** 发现页签。 */
         DISCOVER,
+        /** 附近页签。 */
         NEARBY
     }
 
     private companion object {
+        /** 触发分页加载时距离列表尾部的阈值。 */
         private const val LOAD_MORE_THRESHOLD = 4
     }
 }

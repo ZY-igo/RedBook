@@ -1,3 +1,8 @@
+/**
+ * 文件说明：AppLogger.kt
+ * 作用：集中封装应用运行日志的记录与输出逻辑。
+ * 备注：用于标注当前源码文件的职责，便于后续维护与排查。
+ */
 package com.zhengyang.redbook.utils
 
 import android.util.Log
