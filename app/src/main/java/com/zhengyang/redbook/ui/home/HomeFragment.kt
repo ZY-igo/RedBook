@@ -6,12 +6,18 @@
 package com.zhengyang.redbook.ui.home
 
 import android.content.Intent
+import android.content.res.Resources
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Bundle
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewConfiguration
+import android.view.animation.AccelerateInterpolator
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
@@ -27,18 +33,21 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.StaggeredGridLayoutManager
+import coil.ImageLoader
 import com.google.android.material.snackbar.Snackbar
 import com.zhengyang.redbook.R
 import com.zhengyang.redbook.databinding.FragmentHomeBinding
 import com.zhengyang.redbook.ui.note.NoteDetailActivity
 import com.zhengyang.redbook.ui.search.SearchActivity
 import com.zhengyang.redbook.utils.AppLogger
-import com.zhengyang.redbook.utils.dpToPx
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /**
  * 首页主界面片段
@@ -56,10 +65,19 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     /** 首页状态提供者，负责产出页面状态与一次性事件。 */
     private val viewModel: HomeViewModel by viewModels()
 
+    @Inject
+    lateinit var imageLoader: ImageLoader
+
     /** 发现流列表适配器。 */
-    private val adapter = HomeAdapter()
+    private lateinit var adapter: HomeAdapter
+    /** 发现流滑动预览层适配器。 */
+    private lateinit var previewAdapter: HomeAdapter
     /** 关注流列表适配器。 */
-    private val followingAdapter = HomeAdapter()
+    private lateinit var followingAdapter: HomeAdapter
+    /** 发现流底部状态适配器。 */
+    private lateinit var discoverFooterAdapter: HomeFeedFooterAdapter
+    /** 关注流底部状态适配器。 */
+    private lateinit var followingFooterAdapter: HomeFeedFooterAdapter
     /** 频道管理协调器，负责维护频道选择与编辑状态。 */
     private val channelCoordinator = HomeChannelCoordinator()
     /** 网络断开时展示的提示条。 */
@@ -76,6 +94,9 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     private var isCategoryExpanded = false
     /** 当前选中的顶部页签。 */
     private var currentTopTab = TopTab.DISCOVER
+    private var isCategorySectionVisible = true
+    private var isDiscoverTransitionAnimating = false
+    private var activeDiscoverSwipe: DiscoverSwipeSession? = null
 
     /**
      * 初始化首页视图与交互。
@@ -86,6 +107,11 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         _binding = FragmentHomeBinding.bind(view)
+        adapter = HomeAdapter(imageLoader)
+        previewAdapter = HomeAdapter(imageLoader)
+        followingAdapter = HomeAdapter(imageLoader)
+        discoverFooterAdapter = HomeFeedFooterAdapter()
+        followingFooterAdapter = HomeFeedFooterAdapter()
         followingSectionRenderer = HomeFollowingSectionRenderer(
             context = requireContext(),
             binding = binding,
@@ -102,6 +128,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         setupDrawer()
         setupRecyclerViews()
         setupPagination()
+        setupCategorySectionScrollBehavior()
         setupCategoryTabs()
         setupFollowingPage()
         collectUiState()
@@ -117,6 +144,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         }
 
         renderTopTab(currentTopTab)
+        showCategorySection(animate = false)
     }
 
     /**
@@ -184,6 +212,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         binding.tabFollowing.isSelected = tab == TopTab.FOLLOWING
         binding.tabDiscover.isSelected = tab == TopTab.DISCOVER
         binding.tabNearby.isSelected = tab == TopTab.NEARBY
+        showCategorySection(animate = false)
 
         val showDiscoverContent = tab != TopTab.FOLLOWING
         binding.discoverContentContainer.visibility = if (showDiscoverContent) View.VISIBLE else View.GONE
@@ -305,21 +334,38 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         adapter.onItemClick = { item ->
             startActivity(NoteDetailActivity.createIntent(requireContext(), item))
         }
-        binding.recyclerView.adapter = adapter
+        binding.recyclerView.adapter = ConcatAdapter(adapter, discoverFooterAdapter)
         binding.recyclerView.setHasFixedSize(false)
+        binding.recyclerView.itemAnimator = null
         if (binding.recyclerView.itemDecorationCount == 0) {
             binding.recyclerView.addItemDecoration(HomeSpacingDecoration())
+        }
+
+        previewAdapter.onItemClick = { item ->
+            startActivity(NoteDetailActivity.createIntent(requireContext(), item))
+        }
+        binding.discoverSwipePreviewRecyclerView.adapter = previewAdapter
+        binding.discoverSwipePreviewRecyclerView.setHasFixedSize(false)
+        binding.discoverSwipePreviewRecyclerView.itemAnimator = null
+        if (binding.discoverSwipePreviewRecyclerView.itemDecorationCount == 0) {
+            binding.discoverSwipePreviewRecyclerView.addItemDecoration(HomeSpacingDecoration())
         }
 
         followingAdapter.onItemClick = { item ->
             startActivity(NoteDetailActivity.createIntent(requireContext(), item))
         }
-        binding.followingRecyclerView.adapter = followingAdapter
+        binding.followingRecyclerView.adapter = ConcatAdapter(followingAdapter, followingFooterAdapter)
         binding.followingRecyclerView.setHasFixedSize(false)
-        binding.followingRecyclerView.layoutManager = GridLayoutManager(requireContext(), 2)
+        binding.followingRecyclerView.itemAnimator = null
+        binding.followingRecyclerView.layoutManager = createGridLayoutManager(
+            spanCount = 2,
+            adapterProvider = { binding.followingRecyclerView.adapter }
+        )
         if (binding.followingRecyclerView.itemDecorationCount == 0) {
             binding.followingRecyclerView.addItemDecoration(HomeSpacingDecoration())
         }
+
+        setupDiscoverSwipeNavigation()
     }
 
     private fun setupPagination() {
@@ -341,10 +387,109 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         })
     }
 
+    private fun setupCategorySectionScrollBehavior() {
+        binding.recyclerView.addOnScrollListener(createCategorySectionScrollListener())
+        binding.followingRecyclerView.addOnScrollListener(createCategorySectionScrollListener())
+    }
+
+    private fun createCategorySectionScrollListener(): RecyclerView.OnScrollListener {
+        return object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                if (isCategoryExpanded) return
+                if (!recyclerView.canScrollVertically(-1)) {
+                    showCategorySection()
+                    return
+                }
+                if (currentTopTab == TopTab.FOLLOWING) {
+                    return
+                }
+                if (dy > 0) {
+                    hideCategorySection()
+                }
+            }
+        }
+    }
+
     private fun setupFollowingPage() {
         binding.followingRefreshLayout.setOnRefreshListener {
             viewModel.refreshFollowing(force = true)
         }
+    }
+
+    private fun setupDiscoverSwipeNavigation() {
+        val touchSlop = ViewConfiguration.get(requireContext()).scaledTouchSlop
+        binding.recyclerView.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
+            private var downX = 0f
+            private var downY = 0f
+            private var isDragging = false
+
+            override fun onInterceptTouchEvent(
+                recyclerView: RecyclerView,
+                event: MotionEvent
+            ): Boolean {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downX = event.x
+                        downY = event.y
+                        isDragging = false
+                    }
+
+                    MotionEvent.ACTION_MOVE -> {
+                        if (!canHandleDiscoverSwipe()) return false
+
+                        val deltaX = event.x - downX
+                        val deltaY = event.y - downY
+                        val absDeltaX = kotlin.math.abs(deltaX)
+                        val absDeltaY = kotlin.math.abs(deltaY)
+                        val isHorizontalSwipe =
+                            absDeltaX > touchSlop &&
+                                absDeltaX > absDeltaY * HORIZONTAL_SWIPE_DOMINANCE_RATIO
+                        if (!isHorizontalSwipe) return false
+
+                        if (!isDragging) {
+                            isDragging = startDiscoverSwipe(toNext = deltaX < 0f)
+                        }
+                        if (isDragging) {
+                            updateDiscoverSwipe(deltaX)
+                        }
+                        return isDragging
+                    }
+
+                    MotionEvent.ACTION_UP,
+                    MotionEvent.ACTION_CANCEL -> {
+                        if (isDragging) {
+                            finishDiscoverSwipe(commit = shouldCommitDiscoverSwipe(event.x - downX))
+                        }
+                        isDragging = false
+                    }
+                }
+                return isDragging
+            }
+
+            override fun onTouchEvent(recyclerView: RecyclerView, event: MotionEvent) {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_MOVE -> {
+                        if (isDragging) {
+                            updateDiscoverSwipe(event.x - downX)
+                        }
+                    }
+
+                    MotionEvent.ACTION_UP -> {
+                        if (isDragging) {
+                            finishDiscoverSwipe(commit = shouldCommitDiscoverSwipe(event.x - downX))
+                            isDragging = false
+                        }
+                    }
+
+                    MotionEvent.ACTION_CANCEL -> {
+                        if (isDragging) {
+                            finishDiscoverSwipe(commit = false)
+                            isDragging = false
+                        }
+                    }
+                }
+            }
+        })
     }
 
     private fun setupCategoryTabs() {
@@ -365,11 +510,153 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     }
 
     private fun renderCategory(category: DiscoverCategoryItem) {
+        applySelectedCategory(category)
+        viewModel.selectDiscoverCategory(category)
+    }
+
+    private fun applySelectedCategory(category: DiscoverCategoryItem) {
         channelCoordinator.setCurrentCategory(category)
         renderCompactCategoryTabs()
         renderChannelManager()
         binding.recyclerView.layoutManager = createLayoutManager(category)
-        viewModel.refreshDiscover(category)
+    }
+
+    private fun canHandleDiscoverSwipe(): Boolean {
+        return currentTopTab == TopTab.DISCOVER &&
+            !isCategoryExpanded &&
+            !isDiscoverTransitionAnimating &&
+            channelCoordinator.myChannels.size > 1
+    }
+
+    private fun startDiscoverSwipe(toNext: Boolean): Boolean {
+        val channels = channelCoordinator.myChannels
+        val currentCategory = channelCoordinator.currentCategory ?: return false
+        val currentIndex = channels.indexOfFirst { it.id == currentCategory.id }
+        if (currentIndex == -1) return false
+
+        val targetIndex = if (toNext) currentIndex + 1 else currentIndex - 1
+        val targetCategory = channels.getOrNull(targetIndex) ?: return false
+        val contentWidth = binding.discoverContentContainer.width
+            .takeIf { it > 0 }
+            ?: binding.root.width
+            .takeIf { it > 0 }
+            ?: return false
+        bindDiscoverSwipePreview(targetCategory)
+        activeDiscoverSwipe = DiscoverSwipeSession(
+            targetCategory = targetCategory,
+            toNext = toNext,
+            width = contentWidth.toFloat()
+        )
+        isDiscoverTransitionAnimating = true
+        binding.recyclerView.stopScroll()
+        binding.discoverSwipePreviewRecyclerView.stopScroll()
+        binding.discoverSwipePreviewContainer.visibility = View.VISIBLE
+        resetDiscoverSwipeTranslations()
+        return true
+    }
+
+    private fun updateDiscoverSwipe(deltaX: Float) {
+        val session = activeDiscoverSwipe ?: return
+        val width = session.width
+        val constrainedDelta = deltaX.coerceIn(-width, width)
+        if (session.toNext && constrainedDelta > 0f) return
+        if (!session.toNext && constrainedDelta < 0f) return
+
+        val previewBaseTranslation = if (session.toNext) width else -width
+        setDiscoverSwipeTranslations(
+            currentTranslation = constrainedDelta,
+            previewTranslation = previewBaseTranslation + constrainedDelta
+        )
+    }
+
+    private fun shouldCommitDiscoverSwipe(deltaX: Float): Boolean {
+        val session = activeDiscoverSwipe ?: return false
+        return kotlin.math.abs(deltaX) >= session.width * DISCOVER_SWIPE_COMMIT_THRESHOLD
+    }
+
+    private fun finishDiscoverSwipe(commit: Boolean) {
+        val session = activeDiscoverSwipe ?: return
+        val width = session.width
+        val currentTarget = if (commit) {
+            if (session.toNext) -width else width
+        } else {
+            0f
+        }
+        val previewStart = if (session.toNext) width else -width
+        val previewTarget = if (commit) 0f else previewStart
+
+        val animatedViews = discoverSwipeAnimatedViews()
+        val animatedPreview = binding.discoverSwipePreviewContainer
+        var remainingAnimations = animatedViews.size + 1
+        val onAnimationEnd = {
+            remainingAnimations -= 1
+            if (remainingAnimations == 0) {
+                if (commit) {
+                    applySelectedCategory(session.targetCategory)
+                    viewModel.selectDiscoverCategory(session.targetCategory)
+                }
+                clearDiscoverSwipeState()
+            }
+        }
+
+        animatedViews.forEach { view ->
+            view.animate()
+                .translationX(currentTarget)
+                .setDuration(DISCOVER_SWIPE_SETTLE_DURATION)
+                .setInterpolator(DecelerateInterpolator())
+                .withEndAction(onAnimationEnd)
+                .start()
+        }
+        animatedPreview.animate()
+            .translationX(previewTarget)
+            .setDuration(DISCOVER_SWIPE_SETTLE_DURATION)
+            .setInterpolator(DecelerateInterpolator())
+            .withEndAction(onAnimationEnd)
+            .start()
+    }
+
+    private fun bindDiscoverSwipePreview(category: DiscoverCategoryItem) {
+        binding.discoverSwipePreviewRecyclerView.layoutManager = createLayoutManager(category)
+        previewAdapter.submitList(viewModel.peekDiscoverItems(category.id) ?: HomeSkeletonFactory.discover())
+    }
+
+    private fun resetDiscoverSwipeTranslations() {
+        val session = activeDiscoverSwipe ?: return
+        val previewStart = if (session.toNext) session.width else -session.width
+        setDiscoverSwipeTranslations(
+            currentTranslation = 0f,
+            previewTranslation = previewStart
+        )
+    }
+
+    private fun setDiscoverSwipeTranslations(
+        currentTranslation: Float,
+        previewTranslation: Float
+    ) {
+        discoverSwipeAnimatedViews().forEach { view ->
+            view.animate().cancel()
+            view.translationX = currentTranslation
+        }
+        binding.discoverSwipePreviewContainer.animate().cancel()
+        binding.discoverSwipePreviewContainer.translationX = previewTranslation
+    }
+
+    private fun discoverSwipeAnimatedViews(): List<View> {
+        return listOf(binding.discoverRefreshLayout, binding.discoverEmptyContainer)
+    }
+
+    private fun clearDiscoverSwipeState() {
+        discoverSwipeAnimatedViews().forEach { view ->
+            view.animate().cancel()
+            view.translationX = 0f
+        }
+        binding.discoverSwipePreviewContainer.animate().cancel()
+        binding.discoverSwipePreviewContainer.translationX = 0f
+        binding.discoverSwipePreviewContainer.visibility = View.GONE
+        previewAdapter.submitList(emptyList())
+        activeDiscoverSwipe = null
+        isDiscoverTransitionAnimating = false
+        renderDiscoverState(viewModel.uiState.value)
     }
 
     /**
@@ -401,8 +688,17 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
             binding.followingRefreshLayout.setRefreshing(false)
         }
         syncCategories(state.categories)
-        adapter.submitList(state.discoverItems)
+        if (activeDiscoverSwipe == null) {
+            renderDiscoverState(state)
+        }
         followingSectionRenderer?.render(state, followingAdapter)
+        renderFollowingFooter(state)
+    }
+
+    private fun renderDiscoverState(state: HomeUiState) {
+        adapter.submitList(state.discoverItems)
+        renderDiscoverEmptyState(state)
+        renderDiscoverFooter(state)
     }
 
     /**
@@ -419,23 +715,88 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     }
 
     private fun syncCategories(categories: List<DiscoverCategoryItem>) {
+        val previousCategoryId = channelCoordinator.currentCategory?.id
         channelCoordinator.sync(categories)
         renderCompactCategoryTabs()
         renderChannelManager()
+
+        val currentCategory = when (currentTopTab) {
+            TopTab.NEARBY -> channelCoordinator.findNearbyFallbackCategory()
+            else -> channelCoordinator.currentCategory
+        } ?: return
+        if (currentTopTab == TopTab.FOLLOWING) return
+
+        val shouldBootstrapSelection =
+            previousCategoryId == null ||
+                binding.recyclerView.layoutManager == null ||
+                previousCategoryId != currentCategory.id
+        if (shouldBootstrapSelection) {
+            applySelectedCategory(currentCategory)
+        }
+
+        val state = viewModel.uiState.value
+        val shouldRequestInitialDiscover =
+            state.discoverItems.isEmpty() &&
+                !state.isDiscoverRefreshing &&
+                !state.isDiscoverLoadingMore
+        if (shouldRequestInitialDiscover) {
+            viewModel.selectDiscoverCategory(currentCategory)
+        }
+    }
+
+    private fun renderDiscoverEmptyState(state: HomeUiState) {
+        val shouldShow = !state.isInitialLoading &&
+            !state.isDiscoverRefreshing &&
+            state.discoverItems.isEmpty() &&
+            !state.discoverErrorMessage.isNullOrBlank()
+        binding.discoverEmptyContainer.visibility = if (shouldShow) View.VISIBLE else View.GONE
+        if (!shouldShow) return
+        binding.discoverEmptyTitle.text = getString(R.string.home_discover_empty_title)
+        binding.discoverEmptySubtitle.text = getString(R.string.home_discover_empty_subtitle)
+    }
+
+    private fun renderDiscoverFooter(state: HomeUiState) {
+        discoverFooterAdapter.submitState(
+            message = when {
+                state.isDiscoverLoadingMore -> getString(R.string.home_feed_loading_more)
+                !state.discoverErrorMessage.isNullOrBlank() && state.discoverItems.isNotEmpty() -> {
+                    getString(R.string.home_feed_offline_cached)
+                }
+                !state.discoverHasMore && state.discoverItems.isNotEmpty() -> getString(R.string.home_feed_end)
+                else -> null
+            },
+            isLoading = state.isDiscoverLoadingMore
+        )
+    }
+
+    private fun renderFollowingFooter(state: HomeUiState) {
+        followingFooterAdapter.submitState(
+            message = when {
+                state.isFollowingLoadingMore -> getString(R.string.home_feed_loading_more)
+                !state.followingErrorMessage.isNullOrBlank() && state.followingFeedItems.isNotEmpty() -> {
+                    getString(R.string.home_feed_offline_following)
+                }
+                !state.followingHasMore && state.followingFeedItems.isNotEmpty() -> getString(R.string.home_feed_end)
+                else -> null
+            },
+            isLoading = state.isFollowingLoadingMore
+        )
     }
 
     private fun renderCompactCategoryTabs() {
         channelRenderer?.renderCompactTabs(
-            myChannels = channelCoordinator.myChannels,
+            myChannels = visibleChannelsForCurrentTopTab(),
             currentCategoryId = channelCoordinator.currentCategory?.id,
             onCategorySelected = ::renderCategory
         )
+        scrollCurrentCategoryTabIntoView()
     }
 
     private fun renderChannelManager() {
+        val visibleChannels = visibleChannelsForCurrentTopTab()
         channelRenderer?.renderManager(
-            allChannels = channelCoordinator.allChannels,
-            myChannels = channelCoordinator.myChannels,
+            allChannels = visibleChannelsForManager(),
+            myChannels = visibleChannels,
             currentCategoryId = channelCoordinator.currentCategory?.id,
             isEditMode = channelCoordinator.isEditMode,
             callbacks = HomeChannelRenderer.ChannelCallbacks(
@@ -526,13 +887,103 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         }
     }
 
+    private fun showCategorySection(animate: Boolean = true) {
+        val section = binding.categorySection
+        val hideOffset = categorySectionHideOffset()
+        section.animate().cancel()
+        isCategorySectionVisible = true
+
+        if (currentTopTab == TopTab.FOLLOWING) {
+            section.visibility = View.VISIBLE
+            section.alpha = 1f
+            section.translationY = 0f
+            return
+        }
+
+        if (!animate || hideOffset <= 0f) {
+            section.visibility = View.VISIBLE
+            section.alpha = 1f
+            section.translationY = 0f
+            return
+        }
+
+        if (section.visibility != View.VISIBLE) {
+            section.visibility = View.VISIBLE
+            section.alpha = 0f
+            section.translationY = -hideOffset
+        }
+        section.animate()
+            .translationY(0f)
+            .alpha(1f)
+            .setDuration(TOP_BAR_SHOW_DURATION)
+            .setInterpolator(OvershootInterpolator(TOP_BAR_OVERSHOOT_TENSION))
+            .start()
+    }
+
+    private fun hideCategorySection(animate: Boolean = true) {
+        val section = binding.categorySection
+        val hideOffset = categorySectionHideOffset()
+        if (!isCategorySectionVisible && section.visibility != View.VISIBLE) return
+        if (isCategoryExpanded) return
+
+        section.animate().cancel()
+        isCategorySectionVisible = false
+
+        if (!animate || hideOffset <= 0f) {
+            section.translationY = -hideOffset
+            section.alpha = 0f
+            section.visibility = View.GONE
+            return
+        }
+
+        section.animate()
+            .translationY(-hideOffset)
+            .alpha(0f)
+            .setDuration(TOP_BAR_HIDE_DURATION)
+            .setInterpolator(AccelerateInterpolator())
+            .withEndAction {
+                if (!isCategorySectionVisible) {
+                    section.visibility = View.GONE
+                }
+            }
+            .start()
+    }
+
+    private fun categorySectionHideOffset(): Float {
+        val section = binding.categorySection
+        return if (section.height > 0) section.height.toFloat() else 0f
+    }
+
     private fun createLayoutManager(category: DiscoverCategoryItem): RecyclerView.LayoutManager {
         return if (category.usesWaterfall) {
             StaggeredGridLayoutManager(2, StaggeredGridLayoutManager.VERTICAL).apply {
                 gapStrategy = StaggeredGridLayoutManager.GAP_HANDLING_MOVE_ITEMS_BETWEEN_SPANS
             }
         } else {
-            GridLayoutManager(requireContext(), 2)
+            createGridLayoutManager(
+                spanCount = 2,
+                adapterProvider = { binding.recyclerView.adapter }
+            )
+        }
+    }
+
+    private fun createGridLayoutManager(
+        spanCount: Int,
+        adapterProvider: () -> RecyclerView.Adapter<*>?
+    ): GridLayoutManager {
+        return GridLayoutManager(requireContext(), spanCount).apply {
+            spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
+                override fun getSpanSize(position: Int): Int {
+                    val adapter = adapterProvider()
+                    val itemCount = adapter?.itemCount ?: return 1
+                    val isFooterPosition = itemCount > 0 && position == itemCount - 1
+                    return if (isFooterPosition) {
+                        spanCount
+                    } else {
+                        1
+                    }
+                }
+            }
         }
     }
 
@@ -635,7 +1086,35 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         ).also { it.show() }
     }
 
-    private fun dp(value: Int): Int = value.dpToPx()
+    private fun scrollCurrentCategoryTabIntoView() {
+        val channels = visibleChannelsForCurrentTopTab()
+        val currentCategoryId = channelCoordinator.currentCategory?.id ?: return
+        val selectedIndex = channels.indexOfFirst { it.id == currentCategoryId }
+        if (selectedIndex == -1) return
+
+        val selectedTab = binding.compactCategoryContainer.getChildAt(selectedIndex) ?: return
+        binding.categoryScroll.post {
+            val scrollView = binding.categoryScroll
+            val targetScrollX =
+                (selectedTab.left - (scrollView.width - selectedTab.width) / 2).coerceAtLeast(0)
+            scrollView.smoothScrollTo(targetScrollX, 0)
+        }
+    }
+
+    private fun dp(value: Int): Int =
+        (value * Resources.getSystem().displayMetrics.density).roundToInt()
+
+    private fun visibleChannelsForCurrentTopTab(): List<DiscoverCategoryItem> {
+        val channels = channelCoordinator.myChannels
+        if (currentTopTab != TopTab.NEARBY) return channels
+        return channels.filterNot { it.id == RECOMMEND_CHANNEL_ID }.ifEmpty { channels }
+    }
+
+    private fun visibleChannelsForManager(): List<DiscoverCategoryItem> {
+        val channels = channelCoordinator.allChannels
+        if (currentTopTab != TopTab.NEARBY) return channels
+        return channels.filterNot { it.id == RECOMMEND_CHANNEL_ID }.ifEmpty { channels }
+    }
 
     /**
      * 清理首页视图引用与短期资源。
@@ -643,7 +1122,9 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     override fun onDestroyView() {
         networkSnackbar?.dismiss()
         networkSnackbar = null
+        clearDiscoverSwipeState()
         binding.recyclerView.adapter = null
+        binding.discoverSwipePreviewRecyclerView.adapter = null
         binding.followingRecyclerView.adapter = null
         followingSectionRenderer = null
         channelRenderer = null
@@ -672,8 +1153,21 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         NEARBY
     }
 
+    private data class DiscoverSwipeSession(
+        val targetCategory: DiscoverCategoryItem,
+        val toNext: Boolean,
+        val width: Float
+    )
+
     private companion object {
+        private const val RECOMMEND_CHANNEL_ID = "recommend"
         /** 触发分页加载时距离列表尾部的阈值。 */
         private const val LOAD_MORE_THRESHOLD = 4
+        private const val HORIZONTAL_SWIPE_DOMINANCE_RATIO = 1.2f
+        private const val DISCOVER_SWIPE_COMMIT_THRESHOLD = 0.28f
+        private const val DISCOVER_SWIPE_SETTLE_DURATION = 180L
+        private const val TOP_BAR_SHOW_DURATION = 260L
+        private const val TOP_BAR_HIDE_DURATION = 180L
+        private const val TOP_BAR_OVERSHOOT_TENSION = 0.72f
     }
 }

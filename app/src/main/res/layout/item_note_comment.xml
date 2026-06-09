@@ -12,14 +12,27 @@
     android:orientation="horizontal"
     android:paddingBottom="12dp">
 
-    <TextView
-        android:id="@+id/commentAvatar"
+    <FrameLayout
         android:layout_width="40dp"
-        android:layout_height="40dp"
-        android:gravity="center"
-        android:textColor="@android:color/white"
-        android:textSize="13sp"
-        android:textStyle="bold" />
+        android:layout_height="40dp">
+
+        <TextView
+            android:id="@+id/commentAvatar"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:textColor="@android:color/white"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <ImageView
+            android:id="@+id/commentAvatarImage"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToOutline="true"
+            android:scaleType="centerCrop"
+            android:visibility="gone" />
+    </FrameLayout>
 
     <LinearLayout
         android:layout_width="0dp"

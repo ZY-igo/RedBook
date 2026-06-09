@@ -110,6 +110,22 @@ class HomeChannelStateTest {
     }
 
     @Test
+    fun `find nearby fallback prefers red waterfall over recommend`() {
+        val state = HomeChannelState()
+        val red = category(id = "red", bucket = DiscoverCategoryBucket.RED)
+        val travel = category(id = "travel")
+        state.sync(
+            listOf(
+                category(id = "recommend", isDefaultSelected = true),
+                red,
+                travel
+            )
+        )
+
+        assertSame(red, state.findNearbyFallbackCategory())
+    }
+
+    @Test
     fun `find nearby fallback returns null when travel missing`() {
         val state = HomeChannelState()
         state.sync(listOf(category(id = "recommend", isDefaultSelected = true)))
@@ -120,12 +136,13 @@ class HomeChannelStateTest {
     private fun category(
         id: String,
         title: String = id,
-        isDefaultSelected: Boolean = false
+        isDefaultSelected: Boolean = false,
+        bucket: DiscoverCategoryBucket = DiscoverCategoryBucket.RECOMMEND
     ): DiscoverCategoryItem {
         return DiscoverCategoryItem(
             id = id,
             title = title,
-            bucket = DiscoverCategoryBucket.RECOMMEND,
+            bucket = bucket,
             usesWaterfall = true,
             isDefaultSelected = isDefaultSelected
         )

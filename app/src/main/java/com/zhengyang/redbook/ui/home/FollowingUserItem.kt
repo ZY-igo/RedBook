@@ -21,6 +21,8 @@ data class FollowingUserItem(
     /** 推荐原因或补充说明文案。 */
     val subtitle: String,
 
+    val avatarUrl: String? = null,
+
     /** 头像背景色值。 */
     val avatarColorHex: String,
 

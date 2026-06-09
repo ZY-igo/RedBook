@@ -21,6 +21,8 @@ data class FollowingUser(
     /** 推荐原因或描述文案。 */
     val subtitle: String,
 
+    val avatarUrl: String? = null,
+
     /** 头像背景色值。 */
     val avatarColorHex: String,
 

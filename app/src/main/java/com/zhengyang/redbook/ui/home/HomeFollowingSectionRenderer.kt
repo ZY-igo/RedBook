@@ -12,11 +12,16 @@ import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.appcompat.widget.AppCompatImageView
 import androidx.appcompat.widget.AppCompatTextView
+import coil.load
 import com.zhengyang.redbook.R
 import com.zhengyang.redbook.databinding.FragmentHomeBinding
+import com.zhengyang.redbook.utils.AppLogger
 import com.zhengyang.redbook.utils.dpToPx
 
 /**
@@ -38,6 +43,10 @@ class HomeFollowingSectionRenderer(
     /** 点击关闭推荐用户时的回调。 */
     private val onDismissSuggestion: (String) -> Unit
 ) {
+    companion object {
+        private const val TAG = "FollowingAvatar"
+    }
+
     /**
      * 渲染关注页顶部区块。
      *
@@ -51,7 +60,11 @@ class HomeFollowingSectionRenderer(
 
         if (!hasFollowing) {
             binding.followingEmptyTitle.text = context.getString(R.string.home_following_empty_title)
-            binding.followingEmptySubtitle.text = context.getString(R.string.home_following_empty_subtitle)
+            binding.followingEmptySubtitle.text = if (state.followingErrorMessage.isNullOrBlank()) {
+                context.getString(R.string.home_following_empty_subtitle)
+            } else {
+                context.getString(R.string.home_feed_offline_following)
+            }
             binding.followingSuggestTitle.text = context.getString(R.string.home_following_suggest_title)
             binding.followingSuggestHint.text = context.getString(R.string.message_close)
             renderSuggestions(state.suggestedUsers)
@@ -202,21 +215,72 @@ class HomeFollowingSectionRenderer(
         sizeDp: Int,
         textSizeSp: Float,
         compact: Boolean
-    ): TextView {
-        return AppCompatTextView(context).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
-            gravity = Gravity.CENTER
-            text = user.name.take(1)
-            textSize = textSizeSp
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.parseColor(user.avatarColorHex))
-                if (!compact) {
-                    setStroke(dp(2), context.getColor(R.color.xhs_bg))
-                }
+    ): View {
+        AppLogger.d(
+            TAG,
+            "bind following avatar, userId=${user.id}, userName=${user.name}, avatarUrl=${user.avatarUrl}"
+        )
+        val avatarBackground = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.parseColor(user.avatarColorHex))
+            if (!compact) {
+                setStroke(dp(2), context.getColor(R.color.xhs_bg))
             }
+        }
+        return FrameLayout(context).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
+            val avatarTextView = AppCompatTextView(context).apply {
+                layoutParams = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+                gravity = Gravity.CENTER
+                text = user.name.take(1)
+                textSize = textSizeSp
+                setTextColor(Color.WHITE)
+                setTypeface(typeface, Typeface.BOLD)
+                background = avatarBackground
+            }
+            addView(AppCompatImageView(context).apply {
+                layoutParams = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                background = avatarBackground.constantState?.newDrawable()?.mutate()
+                clipToOutline = true
+                if (user.avatarUrl.isNullOrBlank()) {
+                    visibility = View.GONE
+                } else {
+                    load(user.avatarUrl) {
+                        crossfade(true)
+                        listener(
+                            onStart = {
+                                visibility = View.GONE
+                                avatarTextView.visibility = View.VISIBLE
+                            },
+                            onSuccess = { _, _ ->
+                                AppLogger.d(
+                                    TAG,
+                                    "following avatar load success, userId=${user.id}, avatarUrl=${user.avatarUrl}"
+                                )
+                                visibility = View.VISIBLE
+                                avatarTextView.visibility = View.GONE
+                            },
+                            onError = { _, result ->
+                                AppLogger.w(
+                                    TAG,
+                                    "following avatar load error, userId=${user.id}, avatarUrl=${user.avatarUrl}, message=${result.throwable.message}",
+                                    result.throwable
+                                )
+                                visibility = View.GONE
+                                avatarTextView.visibility = View.VISIBLE
+                            }
+                        )
+                    }
+                }
+            })
+            addView(avatarTextView)
         }
     }
 

@@ -61,6 +61,10 @@ class HomeViewModel @Inject constructor(
     /** 发现流请求版本号，用于丢弃过期响应。 */
     private val discoverRequestVersion = AtomicInteger(0)
 
+    private val discoverCache = linkedMapOf<String, List<HomeCardItem>>()
+
+    private var currentDiscoverCategoryId: String? = null
+
     /** 关注流请求版本号，用于丢弃过期响应。 */
     private val followingRequestVersion = AtomicInteger(0)
 
@@ -77,6 +81,7 @@ class HomeViewModel @Inject constructor(
      * @param category 当前选中的首页分类
      */
     fun refreshDiscover(category: DiscoverCategoryItem) {
+        currentDiscoverCategoryId = category.id
         discoverOffset.set(0)
         val requestVersion = discoverRequestVersion.incrementAndGet()
         viewModelScope.launch {
@@ -93,6 +98,7 @@ class HomeViewModel @Inject constructor(
             loadHomeDiscoverItems(category, offset = 0).fold(
                 onSuccess = { items ->
                     if (requestVersion != discoverRequestVersion.get()) return@fold
+                    discoverCache[category.id] = items
                     discoverOffset.set(items.size)
                     _uiState.update { state ->
                         state.copy(
@@ -106,11 +112,13 @@ class HomeViewModel @Inject constructor(
                 onFailure = { error ->
                     if (requestVersion != discoverRequestVersion.get()) return@fold
                     val message = error.toUserMessage("Failed to load discover feed")
+                    val cachedItems = discoverCache[category.id]
+                        ?: _uiState.value.discoverItems.filterNot(HomeCardItem::isSkeleton)
                     _uiState.update { state ->
                         state.copy(
-                            discoverItems = emptyList(),
+                            discoverItems = cachedItems,
                             isDiscoverRefreshing = false,
-                            discoverHasMore = false,
+                            discoverHasMore = cachedItems.isNotEmpty(),
                             discoverErrorMessage = message
                         )
                     }
@@ -119,6 +127,24 @@ class HomeViewModel @Inject constructor(
             )
         }
     }
+
+    fun selectDiscoverCategory(category: DiscoverCategoryItem) {
+        currentDiscoverCategoryId = category.id
+        val cachedItems = discoverCache[category.id]
+        discoverOffset.set(cachedItems?.size ?: 0)
+        _uiState.update { state ->
+            state.copy(
+                discoverItems = cachedItems ?: HomeSkeletonFactory.discover(),
+                isDiscoverRefreshing = cachedItems == null,
+                isDiscoverLoadingMore = false,
+                discoverHasMore = true,
+                discoverErrorMessage = null
+            )
+        }
+        refreshDiscover(category)
+    }
+
+    fun peekDiscoverItems(categoryId: String): List<HomeCardItem>? = discoverCache[categoryId]
 
     /**
      * 加载更多发现流内容。
@@ -129,6 +155,7 @@ class HomeViewModel @Inject constructor(
      * @param category 当前选中的首页分类
      */
     fun loadMoreDiscover(category: DiscoverCategoryItem) {
+        currentDiscoverCategoryId = category.id
         if (_uiState.value.isDiscoverRefreshing || _uiState.value.isDiscoverLoadingMore || !_uiState.value.discoverHasMore) {
             return
         }
@@ -143,8 +170,10 @@ class HomeViewModel @Inject constructor(
                     if (requestVersion != discoverRequestVersion.get()) return@fold
                     if (!discoverOffset.compareAndSet(offset, offset + items.size)) return@fold
                     _uiState.update { state ->
+                        val mergedItems = state.discoverItems + items
+                        discoverCache[category.id] = mergedItems
                         state.copy(
-                            discoverItems = state.discoverItems + items,
+                            discoverItems = mergedItems,
                             isDiscoverLoadingMore = false,
                             discoverHasMore = items.isNotEmpty(),
                             discoverErrorMessage = null
@@ -184,7 +213,7 @@ class HomeViewModel @Inject constructor(
                 )
             }
 
-            val shouldLoad = force || _uiState.value.suggestedUsers.isEmpty() || _uiState.value.followingUsers.isEmpty()
+            val shouldLoad = force || _uiState.value.suggestedUsers.isEmpty() || _uiState.value.followingFeedItems.isEmpty()
             if (!shouldLoad && _uiState.value.followingFeedItems.none(HomeCardItem::isSkeleton)) {
                 _uiState.update { it.copy(isFollowingRefreshing = false) }
                 return@launch
@@ -207,11 +236,12 @@ class HomeViewModel @Inject constructor(
                 onFailure = { error ->
                     if (requestVersion != followingRequestVersion.get()) return@fold
                     val message = error.toUserMessage("Failed to load following feed")
+                    val cachedItems = _uiState.value.followingFeedItems.filterNot(HomeCardItem::isSkeleton)
                     _uiState.update { state ->
                         state.copy(
-                            followingFeedItems = emptyList(),
+                            followingFeedItems = cachedItems,
                             isFollowingRefreshing = false,
-                            followingHasMore = false,
+                            followingHasMore = cachedItems.isNotEmpty(),
                             followingErrorMessage = message
                         )
                     }
@@ -319,13 +349,16 @@ class HomeViewModel @Inject constructor(
             _uiState.update { it.copy(isInitialLoading = true, discoverItems = HomeSkeletonFactory.discover()) }
             loadHomeCategories().fold(
                 onSuccess = { categories ->
+                    val initialDiscoverCategory =
+                        categories.firstOrNull(DiscoverCategoryItem::isDefaultSelected)
+                            ?: categories.firstOrNull()
                     _uiState.update {
                         it.copy(
                             categories = categories,
                             isInitialLoading = false
                         )
                     }
-                    categories.firstOrNull()?.let(::refreshDiscover)
+                    initialDiscoverCategory?.let(::selectDiscoverCategory)
                 },
                 onFailure = { error ->
                     val message = error.toUserMessage("Failed to load home channels")

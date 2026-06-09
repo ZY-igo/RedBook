@@ -142,6 +142,7 @@ class HomeRepositoryImpl @Inject constructor(
             id = id,
             name = name,
             subtitle = subtitle,
+            avatarUrl = avatarUrl,
             avatarColorHex = avatarColorHex,
             badge = badge
         )
@@ -161,6 +162,7 @@ class HomeRepositoryImpl @Inject constructor(
             id = id,
             title = title,
             author = author,
+            avatarUrl = avatarUrl,
             likeCount = likeCount.orEmpty().ifBlank { "0" },
             badge = badge.orEmpty(),
             coverLabel = coverLabel.orEmpty(),

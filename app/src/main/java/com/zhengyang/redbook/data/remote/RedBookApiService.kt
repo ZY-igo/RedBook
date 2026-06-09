@@ -23,10 +23,13 @@ import com.zhengyang.redbook.data.remote.model.RemoteSaveDraftRequestDto
 import com.zhengyang.redbook.data.remote.model.RemoteSearchBootstrapDto
 import com.zhengyang.redbook.data.remote.model.RemoteSearchGuessDto
 import com.zhengyang.redbook.data.remote.model.RemoteSearchResultDto
+import okhttp3.MultipartBody
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Part
 import retrofit2.http.Query
 
 /**
@@ -89,6 +92,12 @@ interface RedBookApiService {
     /** 获取当前用户个人资料。 */
     @GET("api/v1/me/profile")
     suspend fun getMyProfile(): ApiResponseDto<RemoteMyProfileDto>
+
+    @Multipart
+    @POST("api/v1/me/avatar")
+    suspend fun uploadMyAvatar(
+        @Part file: MultipartBody.Part
+    ): ApiResponseDto<RemoteMyProfileDto>
 
     /** 获取当前用户感兴趣的人列表。 */
     @GET("api/v1/me/interests")

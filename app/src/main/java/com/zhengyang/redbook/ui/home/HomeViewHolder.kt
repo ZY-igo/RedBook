@@ -8,11 +8,13 @@ package com.zhengyang.redbook.ui.home
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.view.View
-import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
-import coil.load
+import coil.ImageLoader
+import coil.dispose
+import coil.request.ImageRequest
 import com.zhengyang.redbook.R
 import com.zhengyang.redbook.databinding.ItemNoteBinding
+import com.zhengyang.redbook.utils.AppLogger
 import com.zhengyang.redbook.utils.dpToPx
 
 /**
@@ -23,8 +25,13 @@ import com.zhengyang.redbook.utils.dpToPx
  */
 class HomeViewHolder(
     /** 首页卡片条目视图绑定对象。 */
-    private val binding: ItemNoteBinding
+    private val binding: ItemNoteBinding,
+    private val imageLoader: ImageLoader
 ) : RecyclerView.ViewHolder(binding.root) {
+
+    companion object {
+        private const val TAG = "HomeAvatar"
+    }
 
     /**
      * 绑定首页卡片数据。
@@ -51,11 +58,7 @@ class HomeViewHolder(
         binding.tvTitle.text = item.title
         binding.tvAuthorName.text = item.author
         binding.tvLikeCount.text = item.likeCount
-        binding.tvAvatar.text = item.author.take(1)
-        binding.tvAvatar.background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(Color.parseColor(item.avatarColorHex))
-        }
+        bindAvatar(item.author, item.avatarUrl, item.avatarColorHex)
 
         if (item.mediaType == HomeCardItem.MediaType.VIDEO) {
             bindVideo(item)
@@ -76,8 +79,12 @@ class HomeViewHolder(
      */
     fun recycle() {
         binding.root.setOnClickListener(null)
+        binding.ivCover.dispose()
+        binding.ivAvatar.dispose()
         binding.ivCover.setImageDrawable(null)
+        binding.ivAvatar.setImageDrawable(null)
         binding.ivCover.background = null
+        binding.ivAvatar.background = null
         binding.videoPlayerView.player = null
     }
 
@@ -89,12 +96,7 @@ class HomeViewHolder(
     private fun bindImage(item: HomeCardItem) {
         binding.videoPlayerView.visibility = View.GONE
         binding.ivPlayIndicator.visibility = View.GONE
-        binding.ivCover.load(item.imageUrl ?: item.videoCoverUrl) {
-            placeholder(R.drawable.bg_xhs_image_placeholder)
-            error(R.drawable.bg_xhs_image_error)
-            fallback(R.drawable.bg_xhs_image_placeholder)
-            crossfade(true)
-        }
+        loadCover(item.imageUrl ?: item.videoCoverUrl)
     }
 
     /**
@@ -105,12 +107,7 @@ class HomeViewHolder(
     private fun bindVideo(item: HomeCardItem) {
         binding.videoPlayerView.visibility = View.GONE
         binding.ivPlayIndicator.visibility = View.VISIBLE
-        binding.ivCover.load(item.videoCoverUrl ?: item.imageUrl) {
-            placeholder(R.drawable.bg_xhs_image_placeholder)
-            error(R.drawable.bg_xhs_image_error)
-            fallback(R.drawable.bg_xhs_image_placeholder)
-            crossfade(true)
-        }
+        loadCover(item.videoCoverUrl ?: item.imageUrl)
     }
 
     /**
@@ -137,11 +134,14 @@ class HomeViewHolder(
         binding.tvTitle.text = " "
         binding.tvAuthorName.text = " "
         binding.tvLikeCount.text = " "
+        binding.ivAvatar.visibility = View.GONE
+        binding.ivAvatar.setImageDrawable(null)
         binding.tvAvatar.text = ""
         binding.tvAvatar.background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(placeholderColor)
         }
+        binding.tvAvatar.visibility = View.VISIBLE
         binding.tvTitle.background = createTextPlaceholder()
         binding.tvAuthorName.background = createTextPlaceholder()
         binding.tvLikeCount.background = createTextPlaceholder()
@@ -152,10 +152,75 @@ class HomeViewHolder(
      */
     private fun clearPlaceholderState() {
         binding.ivCover.background = null
+        binding.ivAvatar.background = null
         binding.tvTitle.background = null
         binding.tvAuthorName.background = null
         binding.tvLikeCount.background = null
         binding.tvMediaBadge.visibility = View.VISIBLE
+    }
+
+    private fun bindAvatar(author: String, avatarUrl: String?, avatarColorHex: String) {
+        AppLogger.d(TAG, "bind card avatar, author=$author, avatarUrl=$avatarUrl")
+        binding.ivAvatar.dispose()
+        val avatarBackground = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.parseColor(avatarColorHex))
+        }
+        binding.tvAvatar.text = author.take(1)
+        binding.tvAvatar.background = avatarBackground
+        binding.ivAvatar.background = avatarBackground.constantState?.newDrawable()?.mutate()
+        binding.ivAvatar.clipToOutline = true
+        binding.ivAvatar.tag = avatarUrl
+        if (avatarUrl.isNullOrBlank()) {
+            binding.ivAvatar.visibility = View.GONE
+            binding.ivAvatar.setImageDrawable(null)
+            binding.tvAvatar.visibility = View.VISIBLE
+            return
+        }
+        imageLoader.enqueue(
+            ImageRequest.Builder(binding.ivAvatar.context)
+                .data(avatarUrl)
+                .listener(
+                    onError = { _, result ->
+                        AppLogger.w(
+                            TAG,
+                            "avatar request error, author=$author, avatarUrl=$avatarUrl, message=${result.throwable.message}",
+                            result.throwable
+                        )
+                    }
+                )
+                .target(
+                    onStart = {
+                        if (binding.ivAvatar.tag != avatarUrl) {
+                            AppLogger.d(TAG, "skip stale avatar onStart, author=$author, avatarUrl=$avatarUrl")
+                            return@target
+                        }
+                        binding.ivAvatar.visibility = View.GONE
+                        binding.tvAvatar.visibility = View.VISIBLE
+                    },
+                    onSuccess = { result ->
+                        if (binding.ivAvatar.tag != avatarUrl) {
+                            AppLogger.d(TAG, "skip stale avatar onSuccess, author=$author, avatarUrl=$avatarUrl")
+                            return@target
+                        }
+                        AppLogger.d(TAG, "avatar load success, author=$author, avatarUrl=$avatarUrl")
+                        binding.ivAvatar.setImageDrawable(result)
+                        binding.ivAvatar.visibility = View.VISIBLE
+                        binding.tvAvatar.visibility = View.GONE
+                    },
+                    onError = {
+                        if (binding.ivAvatar.tag != avatarUrl) {
+                            AppLogger.d(TAG, "skip stale avatar onError, author=$author, avatarUrl=$avatarUrl")
+                            return@target
+                        }
+                        AppLogger.w(TAG, "avatar load error, author=$author, avatarUrl=$avatarUrl")
+                        binding.ivAvatar.setImageDrawable(null)
+                        binding.ivAvatar.visibility = View.GONE
+                        binding.tvAvatar.visibility = View.VISIBLE
+                    }
+                )
+                .build()
+        )
     }
 
     /**
@@ -168,5 +233,18 @@ class HomeViewHolder(
             cornerRadius = 4.dpToPx().toFloat()
             setColor(binding.root.context.getColor(R.color.xhs_card_soft))
         }
+    }
+
+    private fun loadCover(url: String?) {
+        imageLoader.enqueue(
+            ImageRequest.Builder(binding.ivCover.context)
+                .data(url)
+                .target(binding.ivCover)
+                .placeholder(R.drawable.bg_xhs_image_placeholder)
+                .error(R.drawable.bg_xhs_image_error)
+                .fallback(R.drawable.bg_xhs_image_placeholder)
+                .crossfade(true)
+                .build()
+        )
     }
 }

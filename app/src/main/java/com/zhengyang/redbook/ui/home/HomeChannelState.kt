@@ -133,7 +133,11 @@ class HomeChannelState {
      * @return 旅行频道；若不存在则返回 `null`。
      */
     fun findNearbyFallbackCategory(): DiscoverCategoryItem? {
-        return _state.value.allChannels.firstOrNull { it.id == TRAVEL_CHANNEL_ID }
+        val channels = _state.value.allChannels
+        return channels.firstOrNull { it.bucket == DiscoverCategoryBucket.RED && it.usesWaterfall }
+            ?: channels.firstOrNull { it.id != RECOMMEND_CHANNEL_ID && it.usesWaterfall }
+            ?: channels.firstOrNull { it.id == TRAVEL_CHANNEL_ID }
+            ?: channels.firstOrNull { it.id != RECOMMEND_CHANNEL_ID }
     }
 
     /**

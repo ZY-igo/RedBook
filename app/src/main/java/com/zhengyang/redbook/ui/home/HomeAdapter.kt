@@ -9,6 +9,7 @@ import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
+import coil.ImageLoader
 import com.zhengyang.redbook.databinding.ItemNoteBinding
 
 /**
@@ -17,7 +18,9 @@ import com.zhengyang.redbook.databinding.ItemNoteBinding
  * 负责创建 [HomeViewHolder]、提交卡片数据并转发点击事件，
  * 同时在视图回收和脱离窗口时触发持有者清理逻辑。
  */
-class HomeAdapter : ListAdapter<HomeCardItem, HomeViewHolder>(HomeDiffCallback()) {
+class HomeAdapter(
+    private val imageLoader: ImageLoader
+) : ListAdapter<HomeCardItem, HomeViewHolder>(HomeDiffCallback()) {
 
     /** 卡片点击回调，由外层界面决定点击后的跳转行为。 */
     var onItemClick: ((HomeCardItem) -> Unit)? = null
@@ -31,7 +34,7 @@ class HomeAdapter : ListAdapter<HomeCardItem, HomeViewHolder>(HomeDiffCallback()
      */
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): HomeViewHolder {
         val binding = ItemNoteBinding.inflate(LayoutInflater.from(parent.context), parent, false)
-        return HomeViewHolder(binding)
+        return HomeViewHolder(binding, imageLoader)
     }
 
     /**

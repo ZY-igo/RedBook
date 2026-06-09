@@ -65,9 +65,14 @@
     <color name="xhs_profile_panel_bg">#FFF0F1F4</color>
     <color name="xhs_profile_scrim_mid">#8A95A0A8</color>
     <color name="xhs_profile_scrim_end">#FF6F848C</color>
+    <color name="xhs_login_bg">#FFF7F7F8</color>
+    <color name="xhs_login_wechat">#FF16C45B</color>
+    <color name="xhs_login_outline">#FFE5E7EB</color>
+    <color name="xhs_login_text_primary">#FF1F2329</color>
+    <color name="xhs_login_text_secondary">#FF6B7280</color>
+    <color name="xhs_login_text_tertiary">#FF9AA1AC</color>
     <color name="xhs_splash_bg">#FFF8F8FA</color>
     <color name="xhs_splash_subtitle">#6D7480</color>
-
     <color name="bottom_nav_selected">#1F2329</color>
     <color name="bottom_nav_unselected">#7A808C</color>
     <color name="xhs_refresh_secondary">#94B6FB</color>

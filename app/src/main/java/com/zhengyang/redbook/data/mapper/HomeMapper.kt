@@ -36,6 +36,7 @@ class HomeMapper @Inject constructor() {
             id = entity.id,
             name = entity.name,
             subtitle = entity.subtitle,
+            avatarUrl = null,
             avatarColorHex = entity.avatarColorHex,
             badge = entity.badge
         )
@@ -47,6 +48,7 @@ class HomeMapper @Inject constructor() {
             id = item.id,
             title = item.title,
             author = item.author,
+            avatarUrl = null,
             likeCount = item.likeCount.toString(),
             badge = item.description,
             coverLabel = item.description,
@@ -67,6 +69,7 @@ class HomeMapper @Inject constructor() {
             id = entity.id,
             title = entity.title,
             author = entity.author,
+            avatarUrl = null,
             likeCount = entity.likeCount,
             badge = entity.badge,
             coverLabel = entity.coverLabel,
@@ -97,6 +100,7 @@ class HomeMapper @Inject constructor() {
             id = user.id,
             name = user.name,
             subtitle = user.subtitle,
+            avatarUrl = user.avatarUrl,
             avatarColorHex = user.avatarColorHex,
             badge = user.badge
         )
@@ -107,6 +111,7 @@ class HomeMapper @Inject constructor() {
             id = item.id,
             title = item.title,
             author = item.author,
+            avatarUrl = item.avatarUrl,
             likeCount = item.likeCount,
             badge = item.badge,
             coverLabel = item.coverLabel,

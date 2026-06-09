@@ -18,6 +18,7 @@ data class HomeDiscoverItem(
     val title: String,
     /** 作者名称。 */
     val author: String,
+    val avatarUrl: String? = null,
     /** 点赞数展示文案。 */
     val likeCount: String,
     /** 角标文案。 */

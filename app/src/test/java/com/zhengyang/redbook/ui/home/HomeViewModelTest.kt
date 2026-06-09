@@ -53,6 +53,26 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `init loads default selected category discover feed`() = runTest {
+        val repository = FakeHomeRepository(
+            categories = listOf(
+                category("travel"),
+                category("recommend", defaultSelected = true)
+            ),
+            discoverItemsByCategory = mapOf(
+                "recommend" to listOf(discoverItem(id = "note-1"))
+            ),
+            suggestedUsers = listOf(suggestedUser("user-1")),
+            followingFeedItems = listOf(discoverItem(id = "follow-note"))
+        )
+
+        val viewModel = createViewModel(repository)
+        advanceUntilIdle()
+
+        assertEquals(listOf("note-1"), viewModel.uiState.value.discoverItems.map { it.id })
+    }
+
+    @Test
     fun `refresh discover failure exposes error state and message event`() = runTest {
         val repository = FakeHomeRepository(
             categories = listOf(category("recommend", defaultSelected = true)),
@@ -86,6 +106,34 @@ class HomeViewModelTest {
             HomeUiEvent.ShowMessage("discover failed"),
             eventDeferred.await()
         )
+    }
+
+    @Test
+    fun `refresh discover failure keeps existing items`() = runTest {
+        val repository = FakeHomeRepository(
+            categories = listOf(category("recommend", defaultSelected = true)),
+            discoverItemsByCategory = mapOf(
+                "recommend" to listOf(discoverItem(id = "note-1"))
+            ),
+            suggestedUsers = listOf(suggestedUser("user-1")),
+            followingFeedItems = listOf(discoverItem(id = "follow-note"))
+        )
+        val viewModel = createViewModel(repository)
+        advanceUntilIdle()
+
+        repository.discoverError = IllegalStateException("discover failed")
+        viewModel.refreshDiscover(
+            DiscoverCategoryItem(
+                id = "recommend",
+                title = "recommend",
+                bucket = DiscoverCategoryBucket.RECOMMEND,
+                usesWaterfall = true,
+                isDefaultSelected = true
+            )
+        )
+        advanceUntilIdle()
+
+        assertEquals(listOf("note-1"), viewModel.uiState.value.discoverItems.map { it.id })
     }
 
     @Test
@@ -137,7 +185,8 @@ class HomeViewModelTest {
         return HomeViewModel(
             loadHomeCategories = LoadHomeCategoriesUseCase(repository, mapper),
             loadHomeDiscoverItems = LoadHomeDiscoverItemsUseCase(repository, mapper, displayPolicy),
-            loadHomeFollowingSeed = LoadHomeFollowingSeedUseCase(repository, mapper, displayPolicy)
+            loadHomeFollowingSeed = LoadHomeFollowingSeedUseCase(repository, mapper, displayPolicy),
+            followHomeUser = com.zhengyang.redbook.usecase.FollowHomeUserUseCase(repository)
         )
     }
 
@@ -194,6 +243,15 @@ class HomeViewModelTest {
             return discoverItemsByCategory[categoryId].orEmpty()
         }
 
+        override suspend fun getDiscoverItemsPage(
+            categoryId: String,
+            offset: Int,
+            limit: Int
+        ): List<HomeDiscoverItem> {
+            discoverError?.let { throw it }
+            return discoverItemsByCategory[categoryId].orEmpty().drop(offset).take(limit)
+        }
+
         override suspend fun getSuggestedFollowingUsers(): List<FollowingUser> {
             followingSeedLoadCount += 1
             return suggestedUsers
@@ -202,5 +260,11 @@ class HomeViewModelTest {
         override suspend fun getFollowingFeedItems(): List<HomeDiscoverItem> {
             return followingFeedItems
         }
+
+        override suspend fun getFollowingFeedItemsPage(offset: Int, limit: Int): List<HomeDiscoverItem> {
+            return followingFeedItems.drop(offset).take(limit)
+        }
+
+        override suspend fun followUser(userId: String) = Unit
     }
 }

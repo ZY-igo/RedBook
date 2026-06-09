@@ -45,14 +45,27 @@
                         android:layout_height="wrap_content"
                         android:orientation="horizontal">
 
-                        <TextView
-                            android:id="@+id/profileAvatarText"
+                        <FrameLayout
                             android:layout_width="76dp"
-                            android:layout_height="76dp"
-                            android:background="@drawable/bg_xhs_avatar_dog"
-                            android:gravity="center"
-                            android:text="🐶"
-                            android:textSize="30sp" />
+                            android:layout_height="76dp">
+
+                            <ImageView
+                                android:id="@+id/profileAvatarImage"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:background="@drawable/bg_xhs_avatar_dog"
+                                android:scaleType="centerCrop"
+                                android:visibility="gone" />
+
+                            <TextView
+                                android:id="@+id/profileAvatarText"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:background="@drawable/bg_xhs_avatar_dog"
+                                android:gravity="center"
+                                android:text="🐶"
+                                android:textSize="30sp" />
+                        </FrameLayout>
 
                         <LinearLayout
                             android:layout_width="wrap_content"
@@ -369,6 +382,164 @@
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 
+    <LinearLayout
+        android:id="@+id/loginGuestContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/xhs_login_bg"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingStart="34dp"
+        android:paddingEnd="34dp"
+        android:visibility="gone">
+
+        <Space
+            android:layout_width="wrap_content"
+            android:layout_height="132dp" />
+
+        <TextView
+            android:id="@+id/loginLogoText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/me_login_logo"
+            android:textColor="@color/xhs_accent"
+            android:textSize="28sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/loginSubtitleText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/me_login_subtitle"
+            android:textColor="@color/xhs_login_text_secondary"
+            android:textSize="14sp" />
+
+        <Space
+            android:layout_width="wrap_content"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <Button
+            android:id="@+id/buttonWechatLogin"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:background="@drawable/bg_xhs_login_wechat_button"
+            android:minWidth="0dp"
+            android:text="@string/me_login_wechat"
+            android:textColor="@android:color/white"
+            android:textSize="18sp"
+            app:backgroundTint="@null" />
+
+        <Button
+            android:id="@+id/buttonAppleLogin"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_xhs_login_apple_button"
+            android:minWidth="0dp"
+            android:text="@string/me_login_apple"
+            android:textColor="@color/xhs_login_text_primary"
+            android:textSize="18sp"
+            app:backgroundTint="@null" />
+
+        <TextView
+            android:id="@+id/buttonOtherLogin"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="@string/me_login_other"
+            android:textColor="@color/xhs_login_text_secondary"
+            android:textSize="14sp" />
+
+        <LinearLayout
+            android:id="@+id/otherLoginMethodsContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/buttonPhoneLogin"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_xhs_login_method_chip"
+                android:gravity="center"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:text="@string/me_login_method_phone"
+                android:textColor="@color/xhs_login_text_primary"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/buttonQqLogin"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginStart="12dp"
+                android:background="@drawable/bg_xhs_login_method_chip"
+                android:gravity="center"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:text="@string/me_login_method_qq"
+                android:textColor="@color/xhs_login_text_primary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <View
+                android:id="@+id/loginAgreementIndicator"
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:background="@drawable/bg_xhs_login_agreement_unchecked" />
+
+            <TextView
+                android:id="@+id/loginAgreementText"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:text="@string/me_login_agreement"
+                android:textColor="@color/xhs_login_text_tertiary"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/loginHelperText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:gravity="center"
+            android:text="@string/me_login_helper_default"
+            android:textColor="@color/xhs_login_text_secondary"
+            android:textSize="13sp" />
+
+        <ProgressBar
+            android:id="@+id/loginLoadingIndicator"
+            style="?android:attr/progressBarStyleSmall"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/loginRecoverText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:layout_marginBottom="82dp"
+            android:text="@string/me_login_recover"
+            android:textColor="@color/xhs_login_text_tertiary"
+            android:textSize="13sp" />
+    </LinearLayout>
+
     <View
         android:id="@+id/topActionBarScrim"
         android:layout_width="match_parent"
@@ -407,6 +578,16 @@
                 android:layout_height="0dp"
                 android:layout_weight="1" />
 
+            <TextView
+                android:id="@+id/buttonHelp"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:gravity="center"
+                android:text="@string/me_login_help"
+                android:textColor="@color/xhs_login_text_tertiary"
+                android:textSize="15sp"
+                android:visibility="gone" />
+
             <Button
                 android:id="@+id/buttonEditHome"
                 android:layout_width="88dp"
@@ -431,16 +612,29 @@
                 app:tint="@color/xhs_drawer_text_primary" />
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/topBarAvatar"
+        <FrameLayout
             android:layout_width="28dp"
             android:layout_height="28dp"
             android:layout_gravity="center_horizontal"
-            android:alpha="0"
-            android:background="@drawable/bg_xhs_avatar_dog"
-            android:gravity="center"
-            android:text="🐶"
-            android:textSize="12sp" />
+            android:alpha="0">
+
+            <ImageView
+                android:id="@+id/topBarAvatarImage"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_xhs_avatar_dog"
+                android:scaleType="centerCrop"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/topBarAvatar"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_xhs_avatar_dog"
+                android:gravity="center"
+                android:text="🐶"
+                android:textSize="12sp" />
+        </FrameLayout>
     </FrameLayout>
 
 </FrameLayout>

@@ -36,4 +36,6 @@ interface MyRepository {
      * @return 感兴趣的人展示模型列表。
      */
     suspend fun getInterestPeople(): List<InterestPersonItem>
+
+    suspend fun uploadAvatar(fileName: String, contentType: String, bytes: ByteArray): MyProfileHeader
 }

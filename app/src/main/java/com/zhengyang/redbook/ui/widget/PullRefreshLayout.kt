@@ -170,7 +170,11 @@ class PullRefreshLayout @JvmOverloads constructor(
     private fun moveSpinner(offset: Float) {
         currentOffset = offset
         targetView?.translationY = offset
-        indicator.alpha = min(1f, offset / triggerOffset)
+        val progress = min(1f, offset / triggerOffset)
+        indicator.alpha = progress
+        val scale = 0.72f + progress * 0.28f
+        indicator.scaleX = scale
+        indicator.scaleY = scale
         indicator.visibility = if (offset > 0f || isRefreshing) View.VISIBLE else View.INVISIBLE
         requestLayout()
     }
@@ -193,6 +197,8 @@ class PullRefreshLayout @JvmOverloads constructor(
                     requestLayout()
                 } else {
                     indicator.alpha = 1f
+                    indicator.scaleX = 1f
+                    indicator.scaleY = 1f
                     indicator.visibility = View.VISIBLE
                 }
                 endAction?.invoke()

@@ -49,23 +49,49 @@
 
             <TextView
                 android:id="@+id/buttonPreview"
-                android:layout_width="36dp"
+                android:layout_width="wrap_content"
                 android:layout_height="36dp"
                 android:gravity="center"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
                 android:text="@string/me_preview"
                 android:textColor="@color/xhs_text_primary"
                 android:textSize="14sp" />
         </LinearLayout>
 
-        <TextView
+        <FrameLayout
+            android:id="@+id/avatarContainer"
             android:layout_width="74dp"
             android:layout_height="74dp"
             android:layout_gravity="center_horizontal"
-            android:layout_marginTop="8dp"
-            android:background="@drawable/bg_xhs_avatar_dog"
-            android:gravity="center"
-            android:text="🐶"
-            android:textSize="30sp" />
+            android:layout_marginTop="8dp">
+
+            <ImageView
+                android:id="@+id/avatarImage"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_xhs_avatar_dog"
+                android:scaleType="centerCrop" />
+
+            <TextView
+                android:id="@+id/avatarText"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_xhs_avatar_dog"
+                android:gravity="center"
+                android:text="🐶"
+                android:textSize="30sp" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/avatarAction"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="10dp"
+            android:text="更换头像"
+            android:textColor="@color/xhs_text_secondary"
+            android:textSize="14sp" />
 
         <include layout="@layout/layout_edit_profile_form" />
     </LinearLayout>

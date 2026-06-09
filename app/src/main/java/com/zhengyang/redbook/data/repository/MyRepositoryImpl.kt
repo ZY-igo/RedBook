@@ -18,6 +18,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 
 /**
  * 个人页仓储实现类
@@ -69,6 +72,19 @@ class MyRepositoryImpl @Inject constructor(
         apiService.getMyInterests().requireData().map { it.toUiModel() }
     }
 
+    override suspend fun uploadAvatar(
+        fileName: String,
+        contentType: String,
+        bytes: ByteArray
+    ): MyProfileHeader = withContext(Dispatchers.IO) {
+        val requestBody = bytes.toRequestBody(contentType.toMediaTypeOrNull())
+        val filePart = MultipartBody.Part.createFormData("file", fileName, requestBody)
+        apiService.uploadMyAvatar(filePart).requireData().also {
+            cachedProfile = it
+            cachedProfileAt = System.currentTimeMillis()
+        }.toHeader()
+    }
+
     /**
      * 加载个人资料。
      *
@@ -98,6 +114,7 @@ class MyRepositoryImpl @Inject constructor(
         return MyProfileHeader(
             id = id,
             name = name,
+            avatarUrl = avatarUrl,
             avatarText = avatarText,
             avatarColorHex = avatarColorHex,
             bio = bio

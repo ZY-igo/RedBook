@@ -21,6 +21,8 @@ data class HomeCardItem(
     /** 作者名称。 */
     val author: String,
 
+    val avatarUrl: String? = null,
+
     /** 点赞数展示文案。 */
     val likeCount: String,
 

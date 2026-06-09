@@ -16,6 +16,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import android.util.Log
 import android.view.GestureDetector
 import android.view.Gravity
@@ -32,6 +33,7 @@ import android.widget.PopupWindow
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
+import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AlertDialog
@@ -56,10 +58,12 @@ import androidx.recyclerview.widget.LinearSnapHelper
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
 import com.zhengyang.redbook.R
+import com.zhengyang.redbook.data.remote.RemoteApiConfig
 import com.zhengyang.redbook.data.remote.RemoteResourceMapper
 import com.zhengyang.redbook.data.remote.model.RemoteCommentDto
 import com.zhengyang.redbook.data.remote.model.RemoteNoteDetailDto
 import com.zhengyang.redbook.data.remote.model.RemoteReplyDto
+import com.zhengyang.redbook.data.repository.MyRepository
 import com.zhengyang.redbook.data.repository.NoteRepository
 import com.zhengyang.redbook.databinding.ActivityNoteDetailImageBinding
 import com.zhengyang.redbook.databinding.ActivityNoteDetailVideoBinding
@@ -70,6 +74,7 @@ import com.zhengyang.redbook.media.MediaItemFactory
 import com.zhengyang.redbook.media.MediaPlayerFactory
 import com.zhengyang.redbook.service.foreground.NotificationService
 import com.zhengyang.redbook.ui.home.HomeCardItem
+import com.zhengyang.redbook.ui.my.MyProfileHeader
 import dagger.hilt.android.AndroidEntryPoint
 import java.time.Instant
 import java.time.ZoneId
@@ -95,15 +100,18 @@ class NoteDetailActivity : AppCompatActivity() {
     /** 播放器监听器实例。 */
     private var playerListener: Player.Listener? = null
     /** 缓存的 ExoPlayer 实例。 */
-    private var cachedPlayer: ExoPlayer? = null
     /** 播放进度轮询任务。 */
     private var progressUpdater: Runnable? = null
     /** 手势提示自动隐藏任务。 */
     private var gestureHideRunnable: Runnable? = null
+    /** 全屏控制层自动隐藏任务。 */
+    private var fullscreenControlsHideRunnable: Runnable? = null
     /** 网络状态回调。 */
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     /** 当前是否处于全屏模式。 */
     private var isFullscreen = false
+    /** 全屏控制层是否可见。 */
+    private var areFullscreenControlsVisible = true
     /** 当前是否正在拖动进度条。 */
     private var isSeeking = false
     /** 待执行的 seek 位置。 */
@@ -120,6 +128,8 @@ class NoteDetailActivity : AppCompatActivity() {
     private var pendingNetworkRecovery = false
     /** 网络恢复后是否继续自动播放。 */
     private var shouldResumeAfterNetworkRecovery = false
+    private var shouldResumeOnStart = false
+    private var preparedVideoUrl: String? = null
     /** 手势快进时的基准播放位置。 */
     private var gestureSeekBasePositionMs = 0L
     /** 手势调节音量时的基准音量。 */
@@ -183,8 +193,17 @@ class NoteDetailActivity : AppCompatActivity() {
     lateinit var noteRepository: NoteRepository
 
     @Inject
+    lateinit var myRepository: MyRepository
+
+    @Inject
     /** 远端资源键映射器。 */
     lateinit var remoteResourceMapper: RemoteResourceMapper
+
+    @Inject
+    lateinit var remoteApiConfig: RemoteApiConfig
+
+    @Inject
+    lateinit var exoPlayer: ExoPlayer
 
     /** 当前详情页是否为视频模式。 */
     private val isVideo: Boolean by lazy {
@@ -222,6 +241,7 @@ class NoteDetailActivity : AppCompatActivity() {
             setupVideoLayout()
         } else {
             setupImageLayout()
+            loadCommentComposerAvatar()
         }
         loadRemoteNote()
     }
@@ -247,14 +267,21 @@ class NoteDetailActivity : AppCompatActivity() {
                 videoBinding?.gestureHintText?.removeCallbacks(runnable)
             }
             gestureHideRunnable = null
-            cachedPlayer?.let { player ->
+            fullscreenControlsHideRunnable?.let { runnable ->
+                videoBinding?.fullscreenControlsOverlay?.removeCallbacks(runnable)
+            }
+            fullscreenControlsHideRunnable = null
+            shouldResumeOnStart = exoPlayer.isPlaying
+            if (preparedVideoUrl != null) {
+                exoPlayer.pause()
                 savePlaybackProgress(
                     videoUrl = currentVideoUrl,
-                    positionMs = player.currentPosition,
-                    durationMs = player.duration
+                    positionMs = exoPlayer.currentPosition,
+                    durationMs = exoPlayer.duration
                 )
                 shouldResumeAfterNetworkRecovery = false
             }
+            videoBinding?.detailVideoView?.onPause()
             videoBinding?.detailVideoView?.player = null
             unregisterNetworkCallback()
         }
@@ -358,6 +385,7 @@ class NoteDetailActivity : AppCompatActivity() {
         videoBinding = ActivityNoteDetailVideoBinding.inflate(layoutInflater)
         setContentView(requireVideoBinding().root)
         applyInsets(requireVideoBinding().topBar, Color.BLACK, useLightSystemBars = false)
+        bindVideoInsets()
         bindVideoHeader()
         bindVideoContent()
         bindVideoEvents()
@@ -394,6 +422,24 @@ class NoteDetailActivity : AppCompatActivity() {
         }
     }
 
+    private fun bindVideoInsets() {
+        val binding = requireVideoBinding()
+        val overlay = binding.fullscreenControlsOverlay
+        val initialTopPadding = overlay.paddingTop
+        val initialBottomPadding = overlay.paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(overlay) { view, insets ->
+            val statusBars = insets.getInsets(WindowInsetsCompat.Type.statusBars())
+            val navigationBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+            view.setPadding(
+                view.paddingLeft,
+                initialTopPadding + statusBars.top,
+                view.paddingRight,
+                initialBottomPadding + navigationBars.bottom
+            )
+            insets
+        }
+    }
+
     /**
      * 绑定图文详情头部交互。
      */
@@ -418,6 +464,8 @@ class NoteDetailActivity : AppCompatActivity() {
         binding.buttonVideoAux.setOnClickListener { }
         binding.buttonAction.setOnClickListener { }
         binding.buttonShare.setOnClickListener { }
+        binding.fullscreenBackButton.setOnClickListener { setFullscreen(false) }
+        binding.fullscreenExitButton.setOnClickListener { setFullscreen(false) }
     }
 
     /**
@@ -577,7 +625,7 @@ class NoteDetailActivity : AppCompatActivity() {
             }.onSuccess { comments ->
                 commentItems.clear()
                 commentItems.addAll(comments.map { it.toUiModel() })
-                refreshCommentSection()
+                refreshCommentSectionCompat()
             }.onFailure { error ->
                 Toast.makeText(
                     this@NoteDetailActivity,
@@ -620,8 +668,7 @@ class NoteDetailActivity : AppCompatActivity() {
                 error(android.R.color.black)
             }
             refreshVideoActionState(commentCountOverride = detail.commentCount)
-            releasePlayerIfNeeded()
-            setupPlayerIfNeeded()
+            setupPlayerIfNeeded(forcePrepare = true)
         } else {
             val binding = requireImageBinding()
             binding.topAuthorName.text = detail.author.name
@@ -643,6 +690,44 @@ class NoteDetailActivity : AppCompatActivity() {
      *
      * @param authorName 当前作者名称，用于提示文案展示。
      */
+    private fun loadCommentComposerAvatar() {
+        lifecycleScope.launch {
+            runCatching { myRepository.getProfile() }
+                .onSuccess(::bindCommentComposerAvatar)
+        }
+    }
+
+    private fun bindCommentComposerAvatar(profile: MyProfileHeader) {
+        val binding = imageBinding ?: return
+        val resolvedAvatarUrl = resolveRemoteUrl(profile.avatarUrl)
+        if (resolvedAvatarUrl.isNullOrBlank()) {
+            binding.avatar.scaleType = ImageView.ScaleType.CENTER_INSIDE
+            binding.avatar.setImageResource(R.drawable.ic_xhs_profile)
+            binding.avatar.background = AppCompatResources.getDrawable(this, R.drawable.bg_xhs_avatar_dog)
+            binding.avatar.setColorFilter(ContextCompat.getColor(this, android.R.color.white))
+            return
+        }
+        binding.avatar.clearColorFilter()
+        binding.avatar.background = null
+        binding.avatar.scaleType = ImageView.ScaleType.CENTER_CROP
+        binding.avatar.load(resolvedAvatarUrl) {
+            crossfade(true)
+            listener(
+                onError = { _, _ ->
+                    binding.avatar.scaleType = ImageView.ScaleType.CENTER_INSIDE
+                    binding.avatar.setImageResource(R.drawable.ic_xhs_profile)
+                    binding.avatar.background = AppCompatResources.getDrawable(
+                        this@NoteDetailActivity,
+                        R.drawable.bg_xhs_avatar_dog
+                    )
+                    binding.avatar.setColorFilter(
+                        ContextCompat.getColor(this@NoteDetailActivity, android.R.color.white)
+                    )
+                }
+            )
+        }
+    }
+
     private fun toggleAuthorFollow(authorName: String) {
         val authorId = currentAuthorId ?: return
         val targetValue = !isFollowingAuthor
@@ -820,6 +905,23 @@ class NoteDetailActivity : AppCompatActivity() {
      *
      * @param anchor 弹窗锚点视图。
      */
+    private fun refreshCommentSectionCompat() {
+        if (isVideo) {
+            val comments = when (commentSortMode) {
+                CommentSortMode.DEFAULT -> commentItems.sortedWith(
+                    compareByDescending<NoteCommentUiModel> { it.likeCount }
+                        .thenByDescending { it.timestamp }
+                )
+                CommentSortMode.LATEST -> commentItems.sortedByDescending { it.timestamp }
+                CommentSortMode.MOST_LIKED -> commentItems.sortedByDescending { it.likeCount }
+            }
+            commentAdapter.submitList(comments)
+            refreshVideoActionState(commentCountOverride = commentItems.size)
+            return
+        }
+        refreshCommentSection()
+    }
+
     private fun showCommentSortPopup(anchor: View) {
         val contentView = LayoutInflater.from(this).inflate(R.layout.layout_comment_sort_popup, null)
         val popupWindow = PopupWindow(
@@ -870,13 +972,13 @@ class NoteDetailActivity : AppCompatActivity() {
         val targetValue = !comment.isLiked
         comment.isLiked = targetValue
         comment.likeCount = (comment.likeCount + if (targetValue) 1 else -1).coerceAtLeast(0)
-        refreshCommentSection()
+        refreshCommentSectionCompat()
         lifecycleScope.launch {
             runCatching { noteRepository.toggleCommentLike(comment.id, targetValue) }
                 .onFailure { error ->
                     comment.isLiked = !targetValue
                     comment.likeCount = (comment.likeCount + if (targetValue) -1 else 1).coerceAtLeast(0)
-                    refreshCommentSection()
+                    refreshCommentSectionCompat()
                     Toast.makeText(
                         this@NoteDetailActivity,
                         error.message ?: "璇勮鐐硅禐澶辫触",
@@ -893,7 +995,7 @@ class NoteDetailActivity : AppCompatActivity() {
      */
     private fun toggleCommentReplies(comment: NoteCommentUiModel) {
         comment.isReplyExpanded = !comment.isReplyExpanded
-        refreshCommentSection()
+        refreshCommentSectionCompat()
     }
 
     /**
@@ -905,13 +1007,13 @@ class NoteDetailActivity : AppCompatActivity() {
         val targetValue = !reply.isLiked
         reply.isLiked = targetValue
         reply.likeCount = (reply.likeCount + if (targetValue) 1 else -1).coerceAtLeast(0)
-        refreshCommentSection()
+        refreshCommentSectionCompat()
         lifecycleScope.launch {
             runCatching { noteRepository.toggleCommentLike(reply.id, targetValue) }
                 .onFailure { error ->
                     reply.isLiked = !targetValue
                     reply.likeCount = (reply.likeCount + if (targetValue) -1 else 1).coerceAtLeast(0)
-                    refreshCommentSection()
+                    refreshCommentSectionCompat()
                     Toast.makeText(
                         this@NoteDetailActivity,
                         error.message ?: "鍥炲鐐硅禐澶辫触",
@@ -1035,7 +1137,7 @@ class NoteDetailActivity : AppCompatActivity() {
                     parentComment.isReplyExpanded = true
                     Toast.makeText(this@NoteDetailActivity, "回复已发布", Toast.LENGTH_SHORT).show()
                 }
-                refreshCommentSection()
+                refreshCommentSectionCompat()
                 scrollToCommentSection()
             }.onFailure { error ->
                 Toast.makeText(
@@ -1199,6 +1301,7 @@ class NoteDetailActivity : AppCompatActivity() {
      */
     private fun applyImageModeUi() {
         val binding = imageBinding ?: return
+        applyFullscreenCutoutMode(isFullscreen)
         WindowCompat.setDecorFitsSystemWindows(window, !isFullscreen)
         WindowInsetsControllerCompat(window, window.decorView).apply {
             if (isFullscreen) {
@@ -1242,59 +1345,68 @@ class NoteDetailActivity : AppCompatActivity() {
         )
     }
 
-    private fun setupPlayerIfNeeded() {
+    private fun setupPlayerIfNeeded(forcePrepare: Boolean = false) {
         val videoUrl = currentVideoUrl
         if (videoUrl.isBlank()) return
 
         val binding = requireVideoBinding()
-        val player = cachedPlayer ?: MediaPlayerFactory.create(this).also { createdPlayer ->
-            cachedPlayer = createdPlayer
-            createdPlayer.repeatMode = Player.REPEAT_MODE_OFF
-            createdPlayer.playWhenReady = false
-            createdPlayer.volume = if (isMuted()) 0f else 1f
-            createdPlayer.playbackParameters = PlaybackParameters(getSavedPlaybackSpeed())
-            attachPlayerListener(createdPlayer, videoUrl)
+        val needsPrepare = forcePrepare || preparedVideoUrl != videoUrl
+        if (needsPrepare) {
+            exoPlayer.repeatMode = Player.REPEAT_MODE_OFF
+            exoPlayer.playWhenReady = false
+            exoPlayer.volume = if (isMuted()) 0f else 1f
+            exoPlayer.playbackParameters = PlaybackParameters(getSavedPlaybackSpeed())
+            attachPlayerListener(exoPlayer, videoUrl)
             hasRenderedFirstFrame = false
 
             MediaPlayerFactory.prepare(
-                player = createdPlayer,
+                player = exoPlayer,
                 mediaItem = MediaItemFactory.guessVideo(videoUrl),
                 playWhenReady = false
             )
 
             val savedPosition = getSavedPlaybackProgress(videoUrl)
+            pendingSeekPositionMs = savedPosition.takeIf { it > 0L } ?: C.TIME_UNSET
             if (savedPosition > 0L) {
-                pendingSeekPositionMs = savedPosition
-                createdPlayer.seekTo(savedPosition)
+                exoPlayer.seekTo(savedPosition)
             }
+            preparedVideoUrl = videoUrl
         }
 
-        binding.detailVideoView.player = player
-        player.volume = if (isMuted()) 0f else 1f
-        player.playbackParameters = PlaybackParameters(getSavedPlaybackSpeed())
-        updatePlaybackUi(player)
-        updateProgressUi(player)
+        binding.detailVideoView.player = exoPlayer
+        binding.detailVideoView.onResume()
+        exoPlayer.volume = if (isMuted()) 0f else 1f
+        exoPlayer.playbackParameters = PlaybackParameters(getSavedPlaybackSpeed())
+        if (shouldResumeOnStart && hasActiveNetwork()) {
+            binding.errorContainer.visibility = View.GONE
+            exoPlayer.play()
+        }
+        shouldResumeOnStart = false
+        updatePlaybackUi(exoPlayer)
+        updateProgressUi(exoPlayer)
         binding.root.post { refreshVideoActionLabels() }
         updateSpeedButton()
     }
 
     private fun releasePlayerIfNeeded() {
-        val player = cachedPlayer ?: return
-        savePlaybackProgress(
-            videoUrl = currentVideoUrl,
-            positionMs = player.currentPosition,
-            durationMs = player.duration
-        )
+        if (preparedVideoUrl != null) {
+            savePlaybackProgress(
+                videoUrl = currentVideoUrl,
+                positionMs = exoPlayer.currentPosition,
+                durationMs = exoPlayer.duration
+            )
+        }
         stopPlaybackService()
-        playerListener?.let(player::removeListener)
+        playerListener?.let(exoPlayer::removeListener)
         playerListener = null
         videoBinding?.detailVideoView?.player = null
-        player.release()
-        cachedPlayer = null
+        exoPlayer.release()
+        preparedVideoUrl = null
         pendingSeekPositionMs = C.TIME_UNSET
         hasRenderedFirstFrame = false
         pendingNetworkRecovery = false
         shouldResumeAfterNetworkRecovery = false
+        shouldResumeOnStart = false
     }
 
     private fun attachPlayerListener(player: Player, videoUrl: String) {
@@ -1326,6 +1438,10 @@ class NoteDetailActivity : AppCompatActivity() {
                         binding.playerStatusText.text = getString(R.string.note_detail_video_status_completed)
                         binding.playerStatusText.visibility = View.VISIBLE
                         binding.loadingIndicator.visibility = View.GONE
+                        if (isFullscreen) {
+                            areFullscreenControlsVisible = true
+                            updateFullscreenControlsVisibility()
+                        }
                         showPausedCover()
                         updateProgressUi(player)
                     }
@@ -1367,6 +1483,10 @@ class NoteDetailActivity : AppCompatActivity() {
                 binding.errorContainer.visibility = View.VISIBLE
                 binding.errorText.text = resolvePlaybackErrorMessage(error)
                 pendingNetworkRecovery = !hasActiveNetwork()
+                if (isFullscreen) {
+                    areFullscreenControlsVisible = true
+                    updateFullscreenControlsVisibility()
+                }
                 showPausedCover()
             }
         }
@@ -1380,21 +1500,31 @@ class NoteDetailActivity : AppCompatActivity() {
 
         val toggleClickListener = View.OnClickListener { toggleVideoPlayback() }
         binding.playOverlay.setOnClickListener(toggleClickListener)
-        binding.videoCover.setOnClickListener(toggleClickListener)
+        binding.videoCover.setOnClickListener {
+            if (isFullscreen) {
+                toggleFullscreenControls()
+            } else {
+                toggleVideoPlayback()
+            }
+        }
         binding.fullscreenButton.setOnClickListener { setFullscreen(!isFullscreen) }
         binding.muteButton.setOnClickListener { toggleMute() }
         binding.speedButton.setOnClickListener { cyclePlaybackSpeed() }
+        binding.fullscreenMuteButton.setOnClickListener { toggleMute() }
+        binding.fullscreenSpeedButton.setOnClickListener { cyclePlaybackSpeed() }
         binding.retryButton.setOnClickListener { retryPlayback() }
 
-        binding.detailVideoView.setOnTouchListener { _, event ->
+        val videoTouchListener = View.OnTouchListener { _, event ->
             val handled = gestureDetector.onTouchEvent(event)
             if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
-                binding.detailVideoView.parent?.requestDisallowInterceptTouchEvent(false)
+                binding.videoHost.parent?.requestDisallowInterceptTouchEvent(false)
             } else {
-                binding.detailVideoView.parent?.requestDisallowInterceptTouchEvent(true)
+                binding.videoHost.parent?.requestDisallowInterceptTouchEvent(true)
             }
             handled
         }
+        binding.videoHost.setOnTouchListener(videoTouchListener)
+        binding.detailVideoView.setOnTouchListener(videoTouchListener)
 
         binding.playbackSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
@@ -1431,14 +1561,18 @@ class NoteDetailActivity : AppCompatActivity() {
             override fun onDown(e: MotionEvent): Boolean {
                 horizontalScrollConsumed = false
                 verticalScrollConsumed = false
-                gestureSeekBasePositionMs = cachedPlayer?.currentPosition ?: 0L
+                gestureSeekBasePositionMs = exoPlayer.currentPosition
                 gestureBrightnessBase = currentScreenBrightness()
                 gestureVolumeBase = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 0
                 return true
             }
 
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                toggleVideoPlayback()
+                if (isFullscreen) {
+                    toggleFullscreenControls()
+                } else {
+                    toggleVideoPlayback()
+                }
                 return true
             }
 
@@ -1495,7 +1629,7 @@ class NoteDetailActivity : AppCompatActivity() {
         val nextVolume = (gestureVolumeBase + deltaSteps).coerceIn(0, maxVolume)
         manager.setStreamVolume(AudioManager.STREAM_MUSIC, nextVolume, 0)
         saveMuteState(nextVolume == 0)
-        cachedPlayer?.volume = if (nextVolume == 0) 0f else 1f
+        exoPlayer.volume = if (nextVolume == 0) 0f else 1f
         refreshVideoActionLabels()
         showGestureHint(getString(R.string.note_detail_volume_hint, nextVolume * 100 / maxVolume))
     }
@@ -1515,8 +1649,7 @@ class NoteDetailActivity : AppCompatActivity() {
         binding.errorContainer.visibility = View.GONE
         binding.playerStatusText.visibility = View.GONE
         pendingNetworkRecovery = false
-        val player = cachedPlayer
-        if (player == null) {
+        if (preparedVideoUrl == null) {
             setupPlayerIfNeeded()
             if (autoPlay) {
                 requireVideoBinding().detailVideoView.player?.play()
@@ -1524,11 +1657,11 @@ class NoteDetailActivity : AppCompatActivity() {
             return
         }
         hasRenderedFirstFrame = false
-        player.prepare()
+        exoPlayer.prepare()
         if (autoPlay) {
-            player.play()
+            exoPlayer.play()
         } else {
-            updatePlaybackUi(player)
+            updatePlaybackUi(exoPlayer)
         }
     }
 
@@ -1553,6 +1686,10 @@ class NoteDetailActivity : AppCompatActivity() {
         if (player.isPlaying) {
             shouldResumeAfterNetworkRecovery = false
             player.pause()
+            if (isFullscreen) {
+                areFullscreenControlsVisible = true
+                updateFullscreenControlsVisibility()
+            }
             showPausedCover()
         } else {
             if (player.playbackState == Player.STATE_ENDED) {
@@ -1560,6 +1697,10 @@ class NoteDetailActivity : AppCompatActivity() {
             }
             binding.errorContainer.visibility = View.GONE
             player.play()
+            if (isFullscreen) {
+                areFullscreenControlsVisible = false
+                updateFullscreenControlsVisibility()
+            }
             updatePlaybackUi(player)
         }
     }
@@ -1567,7 +1708,7 @@ class NoteDetailActivity : AppCompatActivity() {
     private fun toggleMute() {
         val muted = !isMuted()
         saveMuteState(muted)
-        cachedPlayer?.volume = if (muted) 0f else 1f
+        exoPlayer.volume = if (muted) 0f else 1f
         refreshVideoActionLabels()
     }
 
@@ -1679,6 +1820,7 @@ class NoteDetailActivity : AppCompatActivity() {
     private fun setFullscreen(enabled: Boolean) {
         if (!isVideo || isFullscreen == enabled) return
         isFullscreen = enabled
+        areFullscreenControlsVisible = enabled
         try {
             requestedOrientation = if (enabled) {
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -1726,6 +1868,9 @@ class NoteDetailActivity : AppCompatActivity() {
         binding.topBar.visibility = if (isFullscreen) View.GONE else View.VISIBLE
         binding.bottomBar.visibility = if (isFullscreen) View.GONE else View.VISIBLE
         binding.contentBottomContainer.visibility = if (isFullscreen) View.GONE else View.VISIBLE
+        binding.videoProgressRow.visibility = if (isFullscreen) View.GONE else View.VISIBLE
+        binding.videoActionRow.visibility = if (isFullscreen) View.GONE else View.VISIBLE
+        updateFullscreenControlsVisibility()
         binding.root.post { refreshVideoActionLabels() }
         binding.fullscreenButton.text = if (isFullscreen) "退出全屏" else "全屏"
     }
@@ -1735,7 +1880,9 @@ class NoteDetailActivity : AppCompatActivity() {
     }
 
     private fun updateSpeedButton() {
-        videoBinding?.speedButton?.text = "${getSavedPlaybackSpeed()}x"
+        val speedLabel = "${getSavedPlaybackSpeed()}x"
+        videoBinding?.speedButton?.text = speedLabel
+        videoBinding?.fullscreenSpeedButton?.text = speedLabel
     }
 
     private fun refreshVideoActionLabels() {
@@ -1750,6 +1897,43 @@ class NoteDetailActivity : AppCompatActivity() {
         } else {
             getString(R.string.note_detail_mute)
         }
+        binding.fullscreenMuteButton.text = binding.muteButton.text
+        binding.fullscreenSpeedButton.text = "${getSavedPlaybackSpeed()}x"
+        binding.fullscreenExitButton.text = getString(R.string.note_detail_exit_fullscreen)
+    }
+
+    private fun toggleFullscreenControls() {
+        if (!isFullscreen) return
+        areFullscreenControlsVisible = !areFullscreenControlsVisible
+        updateFullscreenControlsVisibility()
+    }
+
+    private fun updateFullscreenControlsVisibility() {
+        val binding = videoBinding ?: return
+        val shouldShow = isFullscreen && areFullscreenControlsVisible
+        binding.fullscreenControlsOverlay.visibility = if (shouldShow) View.VISIBLE else View.GONE
+        fullscreenControlsHideRunnable?.let(binding.fullscreenControlsOverlay::removeCallbacks)
+        fullscreenControlsHideRunnable = null
+        if (shouldShow) {
+            val runnable = Runnable {
+                areFullscreenControlsVisible = false
+                binding.fullscreenControlsOverlay.visibility = View.GONE
+                fullscreenControlsHideRunnable = null
+            }
+            fullscreenControlsHideRunnable = runnable
+            binding.fullscreenControlsOverlay.postDelayed(runnable, FULLSCREEN_CONTROLS_AUTO_HIDE_MS)
+        }
+    }
+
+    private fun applyFullscreenCutoutMode(enabled: Boolean) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
+        val attributes = window.attributes
+        attributes.layoutInDisplayCutoutMode = if (enabled) {
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        } else {
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+        }
+        window.attributes = attributes
     }
 
     private fun savePlaybackProgress(videoUrl: String, positionMs: Long, durationMs: Long) {
@@ -1809,10 +1993,10 @@ class NoteDetailActivity : AppCompatActivity() {
             override fun onLost(network: android.net.Network) {
                 runOnUiThread {
                     if (!hasActiveNetwork()) {
-                        cachedPlayer?.let { player ->
-                            shouldResumeAfterNetworkRecovery = player.isPlaying || player.playWhenReady
+                        if (preparedVideoUrl != null) {
+                            shouldResumeAfterNetworkRecovery = exoPlayer.isPlaying || exoPlayer.playWhenReady
                             pendingNetworkRecovery = true
-                            player.pause()
+                            exoPlayer.pause()
                             if (videoBinding != null) {
                                 requireVideoBinding().errorContainer.visibility = View.VISIBLE
                                 requireVideoBinding().errorText.text = getString(R.string.note_detail_network_lost)
@@ -1838,7 +2022,7 @@ class NoteDetailActivity : AppCompatActivity() {
         val manager = audioManager ?: return
         val currentVolume = manager.getStreamVolume(AudioManager.STREAM_MUSIC)
         saveMuteState(currentVolume == 0)
-        cachedPlayer?.volume = if (currentVolume == 0) 0f else 1f
+        exoPlayer.volume = if (currentVolume == 0) 0f else 1f
         refreshVideoActionLabels()
     }
 
@@ -1927,6 +2111,7 @@ class NoteDetailActivity : AppCompatActivity() {
             likeCount = likeCount,
             isLiked = liked,
             isAuthor = authorFlag,
+            avatarUrl = resolveRemoteUrl(avatarUrl),
             avatarResId = remoteResourceMapper.avatarBackgroundForColorHex(avatarColorHex),
             imageUri = imageUrl,
             replies = replies.map { it.toUiModel() }.toMutableList()
@@ -1943,6 +2128,7 @@ class NoteDetailActivity : AppCompatActivity() {
             likeCount = likeCount,
             isLiked = liked,
             isAuthor = authorFlag,
+            avatarUrl = resolveRemoteUrl(avatarUrl),
             avatarResId = remoteResourceMapper.avatarBackgroundForColorHex(avatarColorHex),
             imageUri = imageUrl
         )
@@ -1958,10 +2144,18 @@ class NoteDetailActivity : AppCompatActivity() {
             likeCount = likeCount,
             isLiked = liked,
             isAuthor = authorFlag,
+            avatarUrl = resolveRemoteUrl(avatarUrl),
             avatarResId = remoteResourceMapper.avatarBackgroundForColorHex(avatarColorHex),
             imageUri = imageUrl,
             replyToName = replyToName
         )
+    }
+
+    private fun resolveRemoteUrl(url: String?): String? {
+        val trimmed = url?.trim().orEmpty()
+        if (trimmed.isBlank()) return null
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed
+        return remoteApiConfig.baseUrl.resolve(trimmed)?.toString() ?: trimmed
     }
 
     companion object {
@@ -1998,6 +2192,8 @@ class NoteDetailActivity : AppCompatActivity() {
         private const val STATE_FULLSCREEN = "state_fullscreen"
         /** 手势亮度默认值。 */
         private const val DEFAULT_GESTURE_BRIGHTNESS = 0.5f
+        /** 全屏控制层自动隐藏时长。 */
+        private const val FULLSCREEN_CONTROLS_AUTO_HIDE_MS = 2_500L
         /** 发布时间显示格式。 */
         private val publishTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("MM-dd HH:mm")
 
@@ -2096,6 +2292,8 @@ private data class NoteCommentUiModel(
     var isLiked: Boolean = false,
     /** 当前评论是否为作者本人发布。 */
     val isAuthor: Boolean = false,
+    /** 评论作者头像地址。 */
+    val avatarUrl: String? = null,
     /** 头像背景资源 ID。 */
     val avatarResId: Int,
     /** 评论图片地址。 */
@@ -2126,6 +2324,8 @@ private data class NoteReplyUiModel(
     var isLiked: Boolean = false,
     /** 当前回复是否为作者本人发布。 */
     val isAuthor: Boolean,
+    /** 回复作者头像地址。 */
+    val avatarUrl: String? = null,
     /** 头像背景资源 ID。 */
     val avatarResId: Int,
     /** 回复图片地址。 */
@@ -2206,8 +2406,13 @@ private class NoteCommentAdapter(
             onReplyToggleClick: (NoteCommentUiModel) -> Unit
         ) {
             val context = binding.root.context
-            binding.commentAvatar.text = comment.author.take(1)
-            binding.commentAvatar.background = AppCompatResources.getDrawable(context, comment.avatarResId)
+            bindCommentAvatar(
+                imageView = binding.commentAvatarImage,
+                textView = binding.commentAvatar,
+                avatarUrl = comment.avatarUrl,
+                fallbackText = comment.author.take(1),
+                avatarResId = comment.avatarResId
+            )
             binding.commentAuthor.text = comment.author
             binding.commentAuthorBadge.visibility = if (comment.isAuthor) View.VISIBLE else View.GONE
             binding.commentContent.text = comment.content
@@ -2263,9 +2468,13 @@ private class NoteCommentAdapter(
                     binding.commentReplyContainer,
                     false
                 )
-                replyBinding.replyAvatar.text = reply.author.take(1)
-                replyBinding.replyAvatar.background =
-                    AppCompatResources.getDrawable(context, reply.avatarResId)
+                bindCommentAvatar(
+                    imageView = replyBinding.replyAvatarImage,
+                    textView = replyBinding.replyAvatar,
+                    avatarUrl = reply.avatarUrl,
+                    fallbackText = reply.author.take(1),
+                    avatarResId = reply.avatarResId
+                )
                 replyBinding.replyAuthor.text = reply.author
                 replyBinding.replyAuthorBadge.visibility = if (reply.isAuthor) View.VISIBLE else View.GONE
                 replyBinding.replyContent.text = reply.content
@@ -2314,6 +2523,46 @@ private class NoteCommentAdapter(
             replyBinding.replyLikeCount.text = reply.likeCount.toString()
             replyBinding.replyLikeIcon.setColorFilter(likeColor)
             replyBinding.replyLikeCount.setTextColor(likeColor)
+        }
+
+        private fun bindCommentAvatar(
+            imageView: ImageView,
+            textView: TextView,
+            avatarUrl: String?,
+            fallbackText: String,
+            avatarResId: Int
+        ) {
+            val background = AppCompatResources.getDrawable(textView.context, avatarResId)
+            textView.text = fallbackText
+            textView.background = background
+            imageView.background = background?.constantState?.newDrawable()?.mutate()
+            if (avatarUrl.isNullOrBlank()) {
+                imageView.tag = null
+                imageView.visibility = View.GONE
+                imageView.setImageDrawable(null)
+                textView.visibility = View.VISIBLE
+                return
+            }
+            imageView.tag = avatarUrl
+            imageView.visibility = View.GONE
+            imageView.setImageDrawable(null)
+            textView.visibility = View.VISIBLE
+            imageView.load(avatarUrl) {
+                crossfade(true)
+                listener(
+                    onSuccess = { _, _ ->
+                        if (imageView.tag != avatarUrl) return@listener
+                        imageView.visibility = View.VISIBLE
+                        textView.visibility = View.GONE
+                    },
+                    onError = { _, _ ->
+                        if (imageView.tag != avatarUrl) return@listener
+                        imageView.setImageDrawable(null)
+                        imageView.visibility = View.GONE
+                        textView.visibility = View.VISIBLE
+                    }
+                )
+            }
         }
     }
 }
