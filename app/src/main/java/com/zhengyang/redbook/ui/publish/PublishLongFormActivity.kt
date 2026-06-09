@@ -1,8 +1,3 @@
-/**
- * 文件说明：PublishLongFormActivity.kt
- * 作用：承载 Publish Long Form Activity 相关页面的界面初始化、状态呈现与交互逻辑。
- * 备注：用于标注当前源码文件的职责，便于后续维护与排查。
- */
 package com.zhengyang.redbook.ui.publish
 
 import android.content.Context
@@ -16,8 +11,10 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnAttach
 import androidx.core.view.updateLayoutParams
 import androidx.lifecycle.lifecycleScope
-import com.zhengyang.redbook.data.repository.PublishRepository
+import com.zhengyang.redbook.core.common.Resource
 import com.zhengyang.redbook.databinding.ActivityPublishLongFormBinding
+import com.zhengyang.redbook.usecase.SaveDraftParams
+import com.zhengyang.redbook.usecase.SaveDraftUseCase
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.launch
@@ -28,7 +25,7 @@ class PublishLongFormActivity : AppCompatActivity() {
     private lateinit var binding: ActivityPublishLongFormBinding
 
     @Inject
-    lateinit var publishRepository: PublishRepository
+    lateinit var saveDraftUseCase: SaveDraftUseCase
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -72,25 +69,30 @@ class PublishLongFormActivity : AppCompatActivity() {
             Toast.makeText(this, "请输入标题或正文", Toast.LENGTH_SHORT).show()
             return
         }
+
         binding.actionButton.isEnabled = false
         lifecycleScope.launch {
-            runCatching {
-                publishRepository.saveDraft(
-                    title = title.ifBlank { content.take(20) },
-                    content = content,
-                    mediaType = "LONG_FORM",
-                    autoSaved = false
+            when (
+                val result = saveDraftUseCase(
+                    SaveDraftParams(
+                        title = title.ifBlank { content.take(20) },
+                        content = content,
+                        mediaType = "LONG_FORM",
+                        autoSaved = false
+                    )
                 )
-            }.onSuccess {
-                Toast.makeText(this@PublishLongFormActivity, "草稿已保存", Toast.LENGTH_SHORT).show()
-                finish()
-            }.onFailure { error ->
-                binding.actionButton.isEnabled = true
-                Toast.makeText(
-                    this@PublishLongFormActivity,
-                    error.message ?: "保存失败，请稍后重试",
-                    Toast.LENGTH_SHORT
-                ).show()
+            ) {
+                is Resource.Success -> {
+                    Toast.makeText(this@PublishLongFormActivity, "草稿已保存", Toast.LENGTH_SHORT).show()
+                    finish()
+                }
+
+                is Resource.Error -> {
+                    binding.actionButton.isEnabled = true
+                    Toast.makeText(this@PublishLongFormActivity, result.message, Toast.LENGTH_SHORT).show()
+                }
+
+                is Resource.Loading -> Unit
             }
         }
     }

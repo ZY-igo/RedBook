@@ -1,8 +1,3 @@
-/**
- * 文件说明：PublishTextActivity.kt
- * 作用：承载 Publish Text Activity 相关页面的界面初始化、状态呈现与交互逻辑。
- * 备注：用于标注当前源码文件的职责，便于后续维护与排查。
- */
 package com.zhengyang.redbook.ui.publish
 
 import android.content.Context
@@ -16,8 +11,10 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnAttach
 import androidx.core.view.updateLayoutParams
 import androidx.lifecycle.lifecycleScope
-import com.zhengyang.redbook.data.repository.PublishRepository
+import com.zhengyang.redbook.core.common.Resource
 import com.zhengyang.redbook.databinding.ActivityPublishTextBinding
+import com.zhengyang.redbook.usecase.CreateTextNoteParams
+import com.zhengyang.redbook.usecase.CreateTextNoteUseCase
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.launch
@@ -28,7 +25,7 @@ class PublishTextActivity : AppCompatActivity() {
     private lateinit var binding: ActivityPublishTextBinding
 
     @Inject
-    lateinit var publishRepository: PublishRepository
+    lateinit var createTextNote: CreateTextNoteUseCase
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,16 +50,18 @@ class PublishTextActivity : AppCompatActivity() {
     private fun bindEntryMode() {
         when (intent.getStringExtra(EXTRA_MODE)?.let(Mode::valueOf)) {
             Mode.ALBUM -> {
-                binding.editorTitle.text = "从相册选图"
-                binding.contentInput.hint = "写点配文，记录这一刻..."
+                binding.editorTitle.text = "从相册选择"
+                binding.contentInput.hint = "写点配文，记录这一刻"
             }
+
             Mode.CAMERA -> {
-                binding.editorTitle.text = "拍摄与直播"
-                binding.contentInput.hint = "记录拍摄灵感或直播话题..."
+                binding.editorTitle.text = "拍摄或直播"
+                binding.contentInput.hint = "记录拍摄灵感或直播话题"
             }
+
             else -> {
                 binding.editorTitle.text = "写想法"
-                binding.contentInput.hint = "说点什么或提个问题..."
+                binding.contentInput.hint = "说点什么或提个问题"
             }
         }
     }
@@ -96,30 +95,36 @@ class PublishTextActivity : AppCompatActivity() {
             binding.contentInput.error = "请输入内容"
             return
         }
+
         val title = buildTitle(content)
         val mediaType = when (intent.getStringExtra(EXTRA_MODE)?.let(Mode::valueOf)) {
             Mode.ALBUM -> "IMAGE"
             Mode.CAMERA -> "VIDEO"
             else -> "TEXT"
         }
+
         binding.buttonNext.isEnabled = false
         lifecycleScope.launch {
-            runCatching {
-                publishRepository.createTextNote(
-                    title = title,
-                    content = content,
-                    mediaType = mediaType
+            when (
+                val result = createTextNote(
+                    CreateTextNoteParams(
+                        title = title,
+                        content = content,
+                        mediaType = mediaType
+                    )
                 )
-            }.onSuccess {
-                Toast.makeText(this@PublishTextActivity, "发布成功", Toast.LENGTH_SHORT).show()
-                finish()
-            }.onFailure { error ->
-                binding.buttonNext.isEnabled = true
-                Toast.makeText(
-                    this@PublishTextActivity,
-                    error.message ?: "发布失败，请稍后重试",
-                    Toast.LENGTH_SHORT
-                ).show()
+            ) {
+                is Resource.Success -> {
+                    Toast.makeText(this@PublishTextActivity, "发布成功", Toast.LENGTH_SHORT).show()
+                    finish()
+                }
+
+                is Resource.Error -> {
+                    binding.buttonNext.isEnabled = true
+                    Toast.makeText(this@PublishTextActivity, result.message, Toast.LENGTH_SHORT).show()
+                }
+
+                is Resource.Loading -> Unit
             }
         }
     }

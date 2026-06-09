@@ -681,6 +681,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
      * @param state 最新首页状态。
      */
     private fun renderHomeState(state: HomeUiState) {
+        val binding = _binding ?: return
         if (!state.isDiscoverRefreshing) {
             binding.discoverRefreshLayout.setRefreshing(false)
         }
@@ -696,6 +697,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     }
 
     private fun renderDiscoverState(state: HomeUiState) {
+        if (_binding == null) return
         adapter.submitList(state.discoverItems)
         renderDiscoverEmptyState(state)
         renderDiscoverFooter(state)
@@ -745,6 +747,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     }
 
     private fun renderDiscoverEmptyState(state: HomeUiState) {
+        val binding = _binding ?: return
         val shouldShow = !state.isInitialLoading &&
             !state.isDiscoverRefreshing &&
             state.discoverItems.isEmpty() &&
@@ -756,6 +759,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     }
 
     private fun renderDiscoverFooter(state: HomeUiState) {
+        if (_binding == null) return
         discoverFooterAdapter.submitState(
             message = when {
                 state.isDiscoverLoadingMore -> getString(R.string.home_feed_loading_more)
@@ -770,6 +774,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     }
 
     private fun renderFollowingFooter(state: HomeUiState) {
+        if (_binding == null) return
         followingFooterAdapter.submitState(
             message = when {
                 state.isFollowingLoadingMore -> getString(R.string.home_feed_loading_more)
@@ -1026,14 +1031,14 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         }
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                binding.root.post {
+                _binding?.root?.post {
                     networkSnackbar?.dismiss()
                     networkSnackbar = null
                 }
             }
 
             override fun onLost(network: Network) {
-                binding.root.post {
+                _binding?.root?.post {
                     showNetworkLostMessage()
                 }
             }

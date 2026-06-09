@@ -161,6 +161,7 @@ class MyFragment : Fragment() {
     }
 
     private fun render(state: MyUiState) {
+        val binding = _binding ?: return
         if (!state.isLoggedIn) {
             renderLoggedOutState(state.loginState)
             return

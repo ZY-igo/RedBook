@@ -89,11 +89,13 @@ class MessageFragment : Fragment() {
     }
 
     private fun render(state: MessageUiState) {
+        if (_binding == null) return
         renderMessageRows(state.messageRows)
         renderPeopleSuggestions(state.peopleSuggestions)
     }
 
     private fun renderMessageRows(rows: List<MessageRowItem>) {
+        val binding = _binding ?: return
         binding.messageRowsLayout.messageRowsContainer.removeAllViews()
         rows.forEach { row ->
             val rowBinding = LayoutMessageRowBinding.inflate(
@@ -136,6 +138,7 @@ class MessageFragment : Fragment() {
     }
 
     private fun renderPeopleSuggestions(peopleSuggestions: List<PersonSuggestionItem>) {
+        val binding = _binding ?: return
         binding.peopleLayout.peopleSection.visibility =
             if (peopleSuggestions.isEmpty()) View.GONE else View.VISIBLE
         binding.peopleLayout.peopleContainer.removeAllViews()
@@ -160,6 +163,7 @@ class MessageFragment : Fragment() {
         rowBinding.nameText.text = person.name
         rowBinding.subtitleText.text = person.subtitle
         rowBinding.followButton.setOnClickListener {
+            if (!isAdded) return@setOnClickListener
             Toast.makeText(requireContext(), com.zhengyang.redbook.R.string.message_toast_follow, Toast.LENGTH_SHORT)
                 .show()
         }
