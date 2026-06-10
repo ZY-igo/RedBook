@@ -1,31 +1,20 @@
-/**
- * 文件说明：FollowingUserItem.kt
- * 作用：定义首页推荐关注用户的界面展示模型。
- * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
- */
 package com.zhengyang.redbook.ui.home
 
 /**
- * 推荐关注用户 UI 模型
+ * 首页“关注”区用户模型。
  *
- * 用于在首页关注流顶部展示推荐用户卡片，
- * 承载昵称、说明文案、头像配色和角标等信息。
+ * @property id 用户唯一标识。
+ * @property name 用户显示名称。
+ * @property subtitle 推荐原因或副标题。
+ * @property avatarUrl 用户头像地址，为空时使用文字头像。
+ * @property avatarColorHex 文字头像底色。
+ * @property badge 展示在名字后的角标文案。
  */
 data class FollowingUserItem(
-    /** 用户唯一标识。 */
     val id: String,
-
-    /** 用户昵称。 */
     val name: String,
-
-    /** 推荐原因或补充说明文案。 */
     val subtitle: String,
-
     val avatarUrl: String? = null,
-
-    /** 头像背景色值。 */
     val avatarColorHex: String,
-
-    /** 角标文案，可为空。 */
     val badge: String? = null
 )

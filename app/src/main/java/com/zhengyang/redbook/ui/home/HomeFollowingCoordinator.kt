@@ -10,15 +10,34 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 
+/**
+ * 首页“关注”区协调器。
+ *
+ * 负责“关注”流的首屏刷新、分页、推荐用户处理以及关注动作回滚逻辑。
+ */
 class HomeFollowingCoordinator(
     private val uiState: MutableStateFlow<HomeUiState>,
     private val events: MutableSharedFlow<HomeUiEvent>,
     private val loadHomeFollowingSeed: LoadHomeFollowingSeedUseCase,
     private val followHomeUser: FollowHomeUserUseCase
 ) {
+    /**
+     * 当前“关注”流的分页偏移。
+     */
     private val followingOffset = AtomicInteger(0)
+
+    /**
+     * 当前“关注”请求版本号。
+     *
+     * 用于忽略晚到的旧响应。
+     */
     private val followingRequestVersion = AtomicInteger(0)
 
+    /**
+     * 刷新“关注”页数据。
+     *
+     * @param force 是否强制刷新底层数据源。
+     */
     suspend fun refresh(force: Boolean = false) {
         followingOffset.set(0)
         val requestVersion = followingRequestVersion.incrementAndGet()
@@ -28,17 +47,27 @@ class HomeFollowingCoordinator(
                 isFollowingLoadingMore = false,
                 followingHasMore = true,
                 followingErrorMessage = null,
-                followingFeedItems = if (it.followingFeedItems.isEmpty()) HomeSkeletonFactory.following() else it.followingFeedItems
+                followingFeedItems = if (it.followingFeedItems.isEmpty()) {
+                    HomeSkeletonFactory.following()
+                } else {
+                    it.followingFeedItems
+                }
             )
         }
 
-        val shouldLoad = force || uiState.value.suggestedUsers.isEmpty() || uiState.value.followingFeedItems.isEmpty()
+        val shouldLoad = force ||
+            uiState.value.suggestedUsers.isEmpty() ||
+            uiState.value.followingFeedItems.isEmpty()
         if (!shouldLoad && uiState.value.followingFeedItems.none(HomeCardItem::isSkeleton)) {
             uiState.update { it.copy(isFollowingRefreshing = false) }
             return
         }
 
-        when (val result = loadHomeFollowingSeed(LoadHomeFollowingSeedParams())) {
+        when (
+            val result = loadHomeFollowingSeed(
+                LoadHomeFollowingSeedParams(forceRefresh = force)
+            )
+        ) {
             is Resource.Success -> {
                 if (requestVersion != followingRequestVersion.get()) return
                 val seed = result.data
@@ -73,6 +102,11 @@ class HomeFollowingCoordinator(
         }
     }
 
+    /**
+     * 加载“关注”流下一页。
+     *
+     * @param pageSize 单次拉取数量。
+     */
     suspend fun loadMore(pageSize: Int) {
         val state = uiState.value
         if (state.isFollowingRefreshing || state.isFollowingLoadingMore || !state.followingHasMore) {
@@ -86,7 +120,7 @@ class HomeFollowingCoordinator(
 
         when (
             val result = loadHomeFollowingSeed(
-                LoadHomeFollowingSeedParams(offset = offset, limit = pageSize)
+                LoadHomeFollowingSeedParams(offset = offset, limit = pageSize, forceRefresh = false)
             )
         ) {
             is Resource.Success -> {
@@ -119,6 +153,12 @@ class HomeFollowingCoordinator(
         }
     }
 
+    /**
+     * 在发起关注请求前先做一次本地状态预更新。
+     *
+     * @param userId 目标用户 id。
+     * @return 被关注的用户；如果未找到则返回 `null`。
+     */
     fun beginFollowUser(userId: String): FollowingUserItem? {
         val targetUser = uiState.value.suggestedUsers.firstOrNull { it.id == userId } ?: return null
         uiState.update { state ->
@@ -132,9 +172,18 @@ class HomeFollowingCoordinator(
         return targetUser
     }
 
+    /**
+     * 确认关注用户。
+     *
+     * 如果请求失败，会把本地预更新回滚回去。
+     *
+     * @param userId 目标用户 id。
+     * @param targetUser 预更新阶段保存的用户快照。
+     */
     suspend fun confirmFollowUser(userId: String, targetUser: FollowingUserItem) {
         when (val result = followHomeUser(userId)) {
             is Resource.Success -> Unit
+
             is Resource.Error -> {
                 uiState.update { state ->
                     if (state.suggestedUsers.any { it.id == userId } || state.followingUsers.none { it.id == userId }) {
@@ -157,6 +206,11 @@ class HomeFollowingCoordinator(
         }
     }
 
+    /**
+     * 移除一个推荐用户建议项。
+     *
+     * @param userId 目标用户 id。
+     */
     fun dismissSuggestion(userId: String) {
         uiState.update { state ->
             state.copy(suggestedUsers = state.suggestedUsers.filterNot { it.id == userId })

@@ -128,7 +128,9 @@ class NoteDetailActivity : AppCompatActivity() {
     private var pendingNetworkRecovery = false
     /** 网络恢复后是否继续自动播放。 */
     private var shouldResumeAfterNetworkRecovery = false
+    /** 页面重新回到前台后是否需要继续播放，用于 onStop/onStart 之间的短暂切换恢复。 */
     private var shouldResumeOnStart = false
+    /** 当前已经完成 prepare 的视频地址，用于避免同一资源被重复 prepare。 */
     private var preparedVideoUrl: String? = null
     /** 手势快进时的基准播放位置。 */
     private var gestureSeekBasePositionMs = 0L
@@ -592,6 +594,9 @@ class NoteDetailActivity : AppCompatActivity() {
 
     /**
      * 加载远端笔记详情数据。
+     *
+     * 这里先请求详情，再基于详情中的真实笔记 ID、作者信息和媒体信息回填页面。
+     * 请求成功后会继续串行拉取评论，保证评论排序参数与当前详情页状态保持一致。
      */
     private fun loadRemoteNote() {
         val noteId = currentNoteId ?: return
@@ -901,9 +906,10 @@ class NoteDetailActivity : AppCompatActivity() {
     }
 
     /**
-     * 展示评论排序弹窗。
+     * 兼容刷新评论区。
      *
-     * @param anchor 弹窗锚点视图。
+     * 图文模式拥有完整评论列表区域，需要刷新标题、数量和列表；
+     * 视频模式评论入口只展示互动计数，因此这里只刷新排序后的适配器数据和评论数徽标。
      */
     private fun refreshCommentSectionCompat() {
         if (isVideo) {
@@ -922,6 +928,14 @@ class NoteDetailActivity : AppCompatActivity() {
         refreshCommentSection()
     }
 
+    /**
+     * 展示评论排序弹窗。
+     *
+     * 弹窗只负责切换前端当前选择的排序模式，真正的数据刷新仍然通过重新请求评论完成，
+     * 这样可以保证前后端排序结果一致，也避免本地排序与服务端分页策略不一致。
+     *
+     * @param anchor 弹窗锚点视图。
+     */
     private fun showCommentSortPopup(anchor: View) {
         val contentView = LayoutInflater.from(this).inflate(R.layout.layout_comment_sort_popup, null)
         val popupWindow = PopupWindow(
@@ -1345,6 +1359,15 @@ class NoteDetailActivity : AppCompatActivity() {
         )
     }
 
+    /**
+     * 按需初始化播放器并绑定到当前页面。
+     *
+     * 该方法既承担首次进入页面时的播放器准备，也承担远端详情回填后的视频地址切换处理。
+     * 当视频地址未变化时，只做 View 重新绑定与 UI 恢复；当地址变化或要求强制重建时，
+     * 才重新 prepare 媒体源并恢复本地缓存的播放进度与倍速、静音等偏好。
+     *
+     * @param forcePrepare 是否忽略当前缓存状态，强制重新 prepare 媒体源。
+     */
     private fun setupPlayerIfNeeded(forcePrepare: Boolean = false) {
         val videoUrl = currentVideoUrl
         if (videoUrl.isBlank()) return
@@ -1388,6 +1411,12 @@ class NoteDetailActivity : AppCompatActivity() {
         updateSpeedButton()
     }
 
+    /**
+     * 释放播放器及其关联状态。
+     *
+     * 释放前会先落盘当前进度，随后解除监听、解绑 PlayerView 并清理所有与本次播放相关的
+     * 瞬时状态，避免 Activity 销毁后残留自动恢复、待 seek 或网络恢复等旧状态。
+     */
     private fun releasePlayerIfNeeded() {
         if (preparedVideoUrl != null) {
             savePlaybackProgress(
@@ -1409,6 +1438,18 @@ class NoteDetailActivity : AppCompatActivity() {
         shouldResumeOnStart = false
     }
 
+    /**
+     * 为当前播放器安装页面级监听器。
+     *
+     * 监听器负责把 Media3 的底层播放状态翻译成页面可见状态，例如：
+     * 1. 缓冲时显示 loading 和状态文案。
+     * 2. 就绪时隐藏错误态并执行待恢复的 seek。
+     * 3. 播放结束时重置保存进度并恢复封面。
+     * 4. 播放异常时根据网络与错误码生成更明确的提示。
+     *
+     * @param player 当前绑定到详情页的播放器实例。
+     * @param videoUrl 当前视频地址，用于在播放结束时写回进度。
+     */
     private fun attachPlayerListener(player: Player, videoUrl: String) {
         playerListener?.let(player::removeListener)
         val binding = requireVideoBinding()
@@ -1494,6 +1535,12 @@ class NoteDetailActivity : AppCompatActivity() {
         player.addListener(listener)
     }
 
+    /**
+     * 绑定视频页所有显式交互事件。
+     *
+     * 这里集中处理点击、重试、倍速、静音、全屏与拖动进度条等交互，
+     * 并把视频区域和 PlayerView 的触摸都交给统一的手势识别器，避免两层 View 各自消费事件。
+     */
     private fun bindVideoEvents() {
         val binding = requireVideoBinding()
         val gestureDetector = createVideoGestureDetector()
@@ -1551,6 +1598,17 @@ class NoteDetailActivity : AppCompatActivity() {
         })
     }
 
+    /**
+     * 创建视频手势识别器。
+     *
+     * 手势策略与常见短视频播放器保持一致：
+     * 1. 单击在全屏时切换控制层，在非全屏时切换播放。
+     * 2. 双击直接切换播放状态。
+     * 3. 横向滑动控制 seek。
+     * 4. 左半屏纵向滑动调亮度，右半屏纵向滑动调音量。
+     *
+     * 方法内部通过 touch slop 和首次位移方向锁定横/纵手势，避免一次滑动同时触发两类调节。
+     */
     private fun createVideoGestureDetector(): GestureDetectorCompat {
         val binding = requireVideoBinding()
         val touchSlop = dpToPx(10).toFloat()
@@ -1644,6 +1702,12 @@ class NoteDetailActivity : AppCompatActivity() {
         showGestureHint(getString(R.string.note_detail_brightness_hint, (nextBrightness * 100).roundToInt()))
     }
 
+    /**
+     * 重试当前视频播放。
+     *
+     * 若当前尚未 prepare，则先走完整初始化流程；否则直接对已有播放器重新 prepare。
+     * `autoPlay` 主要用于网络恢复场景，决定恢复后是立即继续播放还是仅恢复到可播放状态。
+     */
     private fun retryPlayback(autoPlay: Boolean = true) {
         val binding = requireVideoBinding()
         binding.errorContainer.visibility = View.GONE
@@ -1665,6 +1729,13 @@ class NoteDetailActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 切换视频播放状态。
+     *
+     * 该方法额外承担两类兜底逻辑：
+     * 1. 无网络时直接进入错误态，并记住网络恢复后是否需要续播。
+     * 2. 首次在移动网络下播放时给出一次性流量提示。
+     */
     private fun toggleVideoPlayback() {
         val binding = requireVideoBinding()
         val player = binding.detailVideoView.player ?: return
@@ -1746,6 +1817,12 @@ class NoteDetailActivity : AppCompatActivity() {
         binding.videoCover.visibility = View.VISIBLE
     }
 
+    /**
+     * 启动进度轮询。
+     *
+     * ExoPlayer 不会自动把当前时间推送到页面文案，因此这里用轻量轮询驱动
+     * 进度条和时间文本刷新；在暂停、离开页面或销毁时必须显式停止，避免 View 泄漏。
+     */
     private fun startProgressUpdates() {
         stopProgressUpdates()
         val binding = videoBinding ?: return
@@ -1778,6 +1855,12 @@ class NoteDetailActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 根据视频原始尺寸和当前页面模式重新计算视频容器布局。
+     *
+     * 非全屏模式下会限制视频高度，避免超长竖屏视频把详情信息完全挤出首屏；
+     * 全屏模式下则尽量占满容器，并配合 `resolveVideoResizeMode` 在 FIT / ZOOM 之间选择。
+     */
     private fun configureVideoLayout(videoWidth: Int, videoHeight: Int) {
         val binding = requireVideoBinding()
         lastVideoWidth = videoWidth
@@ -1817,6 +1900,12 @@ class NoteDetailActivity : AppCompatActivity() {
         binding.videoActionRow.visibility = View.VISIBLE
     }
 
+    /**
+     * 切换视频全屏状态。
+     *
+     * 除了切换系统栏和普通内容区显隐外，这里还会尝试同步调整横竖屏方向，
+     * 并确保全屏控制层初始可见，避免用户进入全屏后没有退出入口。
+     */
     private fun setFullscreen(enabled: Boolean) {
         if (!isVideo || isFullscreen == enabled) return
         isFullscreen = enabled
@@ -1908,6 +1997,12 @@ class NoteDetailActivity : AppCompatActivity() {
         updateFullscreenControlsVisibility()
     }
 
+    /**
+     * 更新全屏控制层显隐，并在显示后启动自动隐藏计时。
+     *
+     * 控制层只有在视频全屏时才有意义；每次重新显示都会重置自动隐藏任务，
+     * 防止上一次计时器把本次刚展示出来的控制层立即隐藏。
+     */
     private fun updateFullscreenControlsVisibility() {
         val binding = videoBinding ?: return
         val shouldShow = isFullscreen && areFullscreenControlsVisible
@@ -1978,6 +2073,12 @@ class NoteDetailActivity : AppCompatActivity() {
         binding.gestureHintText.postDelayed(runnable, 900L)
     }
 
+    /**
+     * 注册默认网络回调。
+     *
+     * 回调只服务于视频详情页：断网时暂停播放并展示错误态；重新联网后，
+     * 若此前记录过待恢复状态，则按用户上一次意图决定是否自动续播。
+     */
     private fun registerNetworkCallbackIfNeeded() {
         if (networkCallback != null) return
         val connectivityManager = getSystemService(ConnectivityManager::class.java) ?: return
@@ -2246,11 +2347,13 @@ private fun CommentSortMode.backendValue(): String {
     }
 }
 
-/**
- * 评论输入对话框状态。
- *
- * 用于在评论输入弹窗打开期间持有输入控件和临时图片选择状态。
- */
+    /**
+     * 评论输入对话框状态。
+     *
+     * ActivityResult 回调与对话框生命周期并不是同一个调用栈，因此这里把对话框实例、
+     * 输入控件、图片预览控件和“正在回复谁”的上下文一起保存，便于图片选择返回后继续
+     * 更新同一个弹窗，而不是丢失用户已输入的内容或回复目标。
+     */
 private data class CommentDialogState(
     /** 当前对话框实例。 */
     val dialog: AlertDialog,
@@ -2337,7 +2440,12 @@ private data class NoteReplyUiModel(
 /**
  * 评论列表适配器。
  *
- * 负责渲染评论与回复层级，并转发点赞、回复和展开收起交互。
+ * 适配器本身尽量保持“纯渲染”职责：
+ * 1. 只负责把评论模型映射到 View。
+ * 2. 不直接修改仓库或发请求。
+ * 3. 所有点赞、回复、展开/收起动作都通过回调回传给 Activity 处理。
+ *
+ * 这样可以让列表层保持轻量，也方便后续把评论区迁移到 Fragment 或独立组件。
  */
 private class NoteCommentAdapter(
     private val onLikeClick: (NoteCommentUiModel) -> Unit,
@@ -2397,6 +2505,9 @@ private class NoteCommentAdapter(
 
         /**
          * 绑定评论及其回复内容。
+         *
+         * 这里先完成一级评论自身的头像、正文、图片和点赞态渲染，
+         * 再把回复区域单独交给 `bindReplies` 处理，减少单个方法的分支复杂度。
          */
         fun bind(
             comment: NoteCommentUiModel,
@@ -2441,6 +2552,9 @@ private class NoteCommentAdapter(
 
         /**
          * 绑定评论回复区。
+         *
+         * 当前实现采用“嵌套动态添加子 View”的方式展示回复，而不是第二层 RecyclerView。
+         * 这是因为回复数量通常较少，结构相对固定，直接 inflate 能减少嵌套滚动和事件分发成本。
          */
         private fun bindReplies(
             comment: NoteCommentUiModel,
@@ -2525,6 +2639,12 @@ private class NoteCommentAdapter(
             replyBinding.replyLikeCount.setTextColor(likeColor)
         }
 
+        /**
+         * 绑定评论头像。
+         *
+         * 为了兼容异步图片加载复用场景，使用 `tag` 校验当前 ImageView 期望展示的地址，
+         * 防止旧请求回调晚到时把已经复用到其他评论上的头像错误覆盖。
+         */
         private fun bindCommentAvatar(
             imageView: ImageView,
             textView: TextView,
@@ -2596,6 +2716,9 @@ private fun dpToPx(context: Context, valueDp: Int): Int {
 
 /**
  * 图文详情图片分页适配器。
+ *
+ * 适配器只关心图片展示与点击回调，不持有页面级状态；
+ * 是否全屏由外部通过 `isFullscreen` 注入，确保分页组件本身保持简单。
  */
 private class NoteImagePagerAdapter : RecyclerView.Adapter<NoteImagePagerAdapter.NoteImageViewHolder>() {
 
@@ -2652,6 +2775,9 @@ private class NoteImagePagerAdapter : RecyclerView.Adapter<NoteImagePagerAdapter
 
         /**
          * 绑定单张详情图片。
+         *
+         * 普通态使用裁剪填充，保证瀑布流式详情页更紧凑；
+         * 全屏态切换为完整适配，优先确保用户能看到整张图片。
          */
         fun bind(
             imageUrl: String,

@@ -1,61 +1,47 @@
-/**
- * 文件说明：DiscoverCategoryItem.kt
- * 作用：定义首页分类的界面展示模型。
- * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
- */
 package com.zhengyang.redbook.ui.home
 
 /**
- * 首页分类 UI 模型
+ * 首页分类的 UI 模型。
  *
- * 用于承载首页分类栏展示和切换所需的数据，
- * 包括分类标题、业务桶和布局配置。
+ * @property id 分类唯一标识。
+ * @property title 分类在界面上的展示标题。
+ * @property bucket 分类所属的业务分组。
+ * @property usesWaterfall 当前分类是否使用双列瀑布流布局。
+ * @property isDefaultSelected 当前分类是否是默认选中项。
  */
 data class DiscoverCategoryItem(
-    /** 分类唯一标识。 */
     val id: String,
-
-    /** 分类展示标题。 */
     val title: String,
-
-    /** 分类所属业务桶。 */
     val bucket: DiscoverCategoryBucket,
-
-    /** 当前分类是否使用瀑布流布局。 */
     val usesWaterfall: Boolean,
-
-    /** 是否为默认选中的分类。 */
     val isDefaultSelected: Boolean
 )
 
 /**
- * 首页分类业务桶枚举
- *
- * 用于对首页分类做语义分组，
- * 便于界面和业务层做定制化处理。
+ * 首页分类的语义分组。
  */
 enum class DiscoverCategoryBucket {
-    /** 推荐分类。 */
+    /** 推荐类目。 */
     RECOMMEND,
 
-    /** 红色主题分类。 */
+    /** 红色主题或主推类目。 */
     RED,
 
-    /** 直播分类。 */
+    /** 直播类目。 */
     LIVE,
 
-    /** 剧集分类。 */
+    /** 剧集类目。 */
     DRAMA,
 
-    /** 攻略技巧分类。 */
+    /** 技巧攻略类目。 */
     TIPS,
 
-    /** 穿搭分类。 */
+    /** 穿搭类目。 */
     OUTFIT,
 
-    /** 美食分类。 */
+    /** 美食类目。 */
     FOOD,
 
-    /** 旅行分类。 */
+    /** 旅行类目。 */
     TRAVEL
 }

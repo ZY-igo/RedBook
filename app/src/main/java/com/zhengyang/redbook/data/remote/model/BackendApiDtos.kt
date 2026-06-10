@@ -1,10 +1,19 @@
 /**
  * 文件说明：BackendApiDtos.kt
- * 作用：定义远端接口返回与请求使用的数据传输模型。
- * 备注：用于标注当前源码文件的职责，便于后续维护与排查。
+ * 作用：定义 remote 层请求体与响应体使用的数据传输模型。
+ * 备注：DTO 只描述远端协议字段，不直接承载页面交互状态或复杂业务逻辑。
  */
 package com.zhengyang.redbook.data.remote.model
 
+/**
+ * 通用接口响应壳。
+ *
+ * 多数接口都会返回统一结构：
+ * 1. `success` 表示业务是否成功。
+ * 2. `code` 表示后端业务码。
+ * 3. `message` 提供错误说明或调试信息。
+ * 4. `data` 承载真实业务数据。
+ */
 data class ApiResponseDto<T>(
     val success: Boolean,
     val code: String,
@@ -12,6 +21,7 @@ data class ApiResponseDto<T>(
     val data: T?
 )
 
+/** 通用分页响应模型，适用于 feed、评论等列表接口。 */
 data class PageResponseDto<T>(
     val items: List<T>,
     val offset: Int,
@@ -20,6 +30,7 @@ data class PageResponseDto<T>(
     val hasMore: Boolean
 )
 
+/** 首页频道分类 DTO，用于驱动首页 tab 和频道排序。 */
 data class RemoteHomeCategoryDto(
     val id: String,
     val title: String,
@@ -29,6 +40,11 @@ data class RemoteHomeCategoryDto(
     val defaultSelected: Boolean
 )
 
+/**
+ * 首页 feed 卡片 DTO。
+ *
+ * 该模型兼容图文和视频两种内容形态，因此同时保留图片、视频和视觉样式相关字段。
+ */
 data class RemoteFeedItemDto(
     val id: String,
     val sectionKey: String? = null,
@@ -51,6 +67,7 @@ data class RemoteFeedItemDto(
     val coverUrl: String? = null
 )
 
+/** 关注页推荐用户 DTO。 */
 data class RemoteFollowingUserDto(
     val id: String,
     val name: String,
@@ -61,11 +78,13 @@ data class RemoteFollowingUserDto(
     val followed: Boolean = false
 )
 
+/** 关注页首屏种子数据，同时包含推荐用户和关注 feed。 */
 data class RemoteFollowingSeedDto(
     val suggestedUsers: List<RemoteFollowingUserDto>,
     val followingFeedItems: PageResponseDto<RemoteFeedItemDto>
 )
 
+/** 消息页列表行 DTO。 */
 data class RemoteMessageRowDto(
     val id: String,
     val title: String,
@@ -79,6 +98,7 @@ data class RemoteMessageRowDto(
     val showsRedDot: Boolean
 )
 
+/** 消息页推荐人物 DTO。 */
 data class RemotePersonSuggestionDto(
     val id: String,
     val avatarText: String,
@@ -87,11 +107,13 @@ data class RemotePersonSuggestionDto(
     val avatarBackgroundKey: String
 )
 
+/** 消息页概览 DTO，把消息列表和推荐人物合并返回。 */
 data class RemoteMessageOverviewDto(
     val messageRows: List<RemoteMessageRowDto>,
     val peopleSuggestions: List<RemotePersonSuggestionDto>
 )
 
+/** 当前登录用户资料 DTO。 */
 data class RemoteMyProfileDto(
     val id: String,
     val name: String,
@@ -105,6 +127,7 @@ data class RemoteMyProfileDto(
     val noteCount: Int
 )
 
+/** “我感兴趣的人”推荐卡片 DTO。 */
 data class RemoteMyInterestPersonDto(
     val id: String,
     val avatarText: String,
@@ -114,17 +137,20 @@ data class RemoteMyInterestPersonDto(
     val followed: Boolean = false
 )
 
+/** 搜索页启动数据 DTO，包含历史记录和猜词列表。 */
 data class RemoteSearchBootstrapDto(
     val historyItems: List<String>,
     val guessItems: List<RemoteSearchGuessDto>
 )
 
+/** 搜索联想词 DTO。 */
 data class RemoteSearchGuessDto(
     val id: String,
     val title: String,
     val meta: String
 )
 
+/** 搜索结果项 DTO。 */
 data class RemoteSearchResultDto(
     val id: String,
     val keyword: String,
@@ -136,10 +162,16 @@ data class RemoteSearchResultDto(
     val badgeColorKey: String
 )
 
+/** 通用布尔切换请求体，适用于关注、点赞、收藏等开关式接口。 */
 data class RemoteFollowToggleRequestDto(
     val value: Boolean
 )
 
+/**
+ * 笔记详情 DTO。
+ *
+ * 该模型是详情页远端数据的核心载体，包含媒体内容、作者信息、互动状态和统计字段。
+ */
 data class RemoteNoteDetailDto(
     val id: String,
     val title: String,
@@ -159,6 +191,7 @@ data class RemoteNoteDetailDto(
     val tags: List<String>
 )
 
+/** 笔记作者 DTO。 */
 data class RemoteNoteAuthorDto(
     val id: String,
     val name: String,
@@ -179,6 +212,7 @@ data class RemoteNoteAuthorDto(
     val following: Boolean = false
 )
 
+/** 评论分页 DTO。当前项目更多直接复用 `PageResponseDto<RemoteCommentDto>`，这里保留作兼容结构。 */
 data class RemoteCommentPageDto(
     val items: List<RemoteCommentDto>,
     val offset: Int,
@@ -187,6 +221,12 @@ data class RemoteCommentPageDto(
     val hasMore: Boolean
 )
 
+/**
+ * 评论 DTO。
+ *
+ * 一个评论既包含自身信息，也带有首层回复列表，
+ * 便于详情页一次性渲染评论树的第一层结构。
+ */
 data class RemoteCommentDto(
     val id: String,
     val noteId: String,
@@ -205,6 +245,7 @@ data class RemoteCommentDto(
     val replies: List<RemoteReplyDto>
 )
 
+/** 评论回复 DTO。 */
 data class RemoteReplyDto(
     val id: String,
     val authorId: String,
@@ -222,6 +263,12 @@ data class RemoteReplyDto(
     val replyToName: String? = null
 )
 
+/**
+ * 创建评论请求 DTO。
+ *
+ * `parentCommentId` 和 `replyToUserName` 共同表达“正在回复谁”的上下文；
+ * 当两者都为空时，表示发布一级评论。
+ */
 data class RemoteCreateCommentRequestDto(
     val noteId: String,
     val parentCommentId: String? = null,
@@ -231,6 +278,7 @@ data class RemoteCreateCommentRequestDto(
     val imageUrl: String? = null
 )
 
+/** 创建笔记请求 DTO。 */
 data class RemoteCreateNoteRequestDto(
     val title: String,
     val description: String? = null,
@@ -239,6 +287,7 @@ data class RemoteCreateNoteRequestDto(
     val tags: List<String> = emptyList()
 )
 
+/** 草稿 DTO，用于草稿箱展示和发布页内容恢复。 */
 data class RemoteDraftDto(
     val id: String,
     val userId: String,
@@ -252,6 +301,7 @@ data class RemoteDraftDto(
     val autoSaved: Boolean
 )
 
+/** 保存草稿请求 DTO。 */
 data class RemoteSaveDraftRequestDto(
     val id: String? = null,
     val title: String,

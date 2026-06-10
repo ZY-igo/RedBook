@@ -1,44 +1,49 @@
-/**
- * 文件说明：HomeChannelCoordinator.kt
- * 作用：负责首页频道管理的状态协调与交互调度。
- * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
- */
 package com.zhengyang.redbook.ui.home
 
 /**
- * 首页频道协调器
+ * 首页频道协调器。
  *
- * 负责对外暴露频道列表、当前选中项和编辑模式等组合状态，
- * 将 [HomeChannelState] 的纯状态能力封装为更贴近界面交互的调用入口。
+ * 对外暴露更贴近交互层的频道管理接口，
+ * 底层实际状态维护由 [HomeChannelState] 完成。
  */
 class HomeChannelCoordinator(
-    /** 首页频道底层状态容器。 */
     private val state: HomeChannelState = HomeChannelState()
 ) {
-    /** 全量频道列表。 */
+    /**
+     * 当前全部频道列表。
+     */
     val allChannels: List<DiscoverCategoryItem>
         get() = state.allChannels
 
+    /**
+     * 当前“我的频道”列表。
+     */
     val myChannels: List<DiscoverCategoryItem>
         get() = state.myChannels
 
+    /**
+     * 当前选中的频道。
+     */
     val currentCategory: DiscoverCategoryItem?
         get() = state.currentCategory
 
+    /**
+     * 当前是否处于频道编辑模式。
+     */
     var isEditMode: Boolean = false
         private set
 
     /**
-     * 同步频道数据源。
+     * 同步最新频道列表。
      *
-     * @param categories 最新频道列表。
+     * @param categories 最新频道数据。
      */
     fun sync(categories: List<DiscoverCategoryItem>) {
         state.sync(categories)
     }
 
     /**
-     * 设置当前选中频道。
+     * 设置当前频道。
      *
      * @param category 需要切换到的频道。
      */
@@ -47,10 +52,10 @@ class HomeChannelCoordinator(
     }
 
     /**
-     * 将频道加入“我的频道”。
+     * 添加一个频道到“我的频道”。
      *
-     * @param category 需要加入的频道。
-     * @return `true` 表示本次调用成功新增了频道。
+     * @param category 需要添加的频道。
+     * @return 是否成功添加。
      */
     fun addChannel(category: DiscoverCategoryItem): Boolean {
         return state.addChannel(category)
@@ -60,7 +65,7 @@ class HomeChannelCoordinator(
      * 从“我的频道”中移除频道。
      *
      * @param category 需要移除的频道。
-     * @return 当前移除动作的结果，用于决定界面后续刷新策略。
+     * @return 描述本次移除结果的状态对象。
      */
     fun removeChannel(category: DiscoverCategoryItem): ChannelRemovalResult {
         val previousCurrentId = currentCategory?.id
@@ -75,26 +80,26 @@ class HomeChannelCoordinator(
     }
 
     /**
-     * 判断频道当前是否允许被移除。
+     * 判断当前频道是否允许移除。
      *
-     * @param category 待判断的频道。
-     * @return `true` 表示当前可以移除。
+     * @param category 待判断频道。
+     * @return 是否允许移除。
      */
     fun canRemoveChannel(category: DiscoverCategoryItem): Boolean {
         return state.canRemoveChannel(category)
     }
 
     /**
-     * 查找“附近”页签的兜底频道。
+     * 查找“附近”页签使用的兜底频道。
      *
-     * @return 用于附近页签展示的频道；若不存在则返回 `null`。
+     * @return 适合展示在“附近”的频道；没有时返回 `null`。
      */
     fun findNearbyFallbackCategory(): DiscoverCategoryItem? {
         return state.findNearbyFallbackCategory()
     }
 
     /**
-     * 切换频道编辑模式。
+     * 切换编辑模式。
      *
      * @return 切换后的编辑模式状态。
      */
@@ -111,17 +116,21 @@ class HomeChannelCoordinator(
     }
 
     /**
-     * 频道移除结果枚举。
-     *
-     * 用于描述移除动作是否生效，以及是否影响到了当前选中频道。
+     * 频道移除结果。
      */
     sealed interface ChannelRemovalResult {
-        /** 当前调用没有产生任何状态变化。 */
+        /** 本次调用没有产生任何变化。 */
         data object Unchanged : ChannelRemovalResult
-        /** 频道已被移除，当前选中频道未变化。 */
+
+        /** 频道已移除，当前选中项未变化。 */
         data object Removed : ChannelRemovalResult
+
+        /**
+         * 频道已移除，且当前选中频道发生变化。
+         *
+         * @property category 移除后新的当前频道。
+         */
         data class CurrentCategoryChanged(
-            /** 移除后新的当前频道，若已空则为 `null`。 */
             val category: DiscoverCategoryItem?
         ) : ChannelRemovalResult
     }

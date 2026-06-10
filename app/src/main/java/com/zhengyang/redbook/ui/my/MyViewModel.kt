@@ -1,43 +1,66 @@
-/**
- * 文件说明：MyViewModel.kt
- * 作用：负责 My View Model 相关界面状态组织、数据加载与事件响应。
- * 备注：用于标注当前源码文件的职责，便于后续维护与排查。
- */
 package com.zhengyang.redbook.ui.my
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.zhengyang.redbook.usecase.LoadMyUiStateParams
 import com.zhengyang.redbook.usecase.LoadMyUiStateUseCase
 import com.zhengyang.redbook.utils.AppLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
+/**
+ * “我的”页面 ViewModel。
+ *
+ * 负责加载个人主页状态，并管理未登录态下的登录面板交互状态。
+ *
+ * @property loadMyUiState 加载“我的”页面状态的用例。
+ * @property uiState 提供给界面的只读状态流。
+ */
 @HiltViewModel
 class MyViewModel @Inject constructor(
     private val loadMyUiState: LoadMyUiStateUseCase
 ) : ViewModel() {
 
+    /**
+     * ViewModel 内部可变状态。
+     */
     private val _uiState = MutableStateFlow(MyUiState())
+
+    /**
+     * 暴露给 UI 层的只读状态流。
+     */
     val uiState: StateFlow<MyUiState> = _uiState.asStateFlow()
 
     init {
-        loadProfile()
+        // 首次进入页面时先按当前默认登录态拉取一份初始数据。
+        loadProfile(forceRefresh = false)
     }
 
+    /**
+     * 主动刷新“我的”页数据。
+     */
     fun refresh() {
-        loadProfile()
+        loadProfile(forceRefresh = true)
     }
 
+    /**
+     * 关闭兴趣推荐区域。
+     */
     fun dismissInterestSection() {
         _uiState.update { it.copy(isInterestSectionVisible = false) }
     }
 
+    /**
+     * 切换登录协议勾选状态。
+     *
+     * 同时清除上一次的协议错误提示。
+     */
     fun toggleAgreement() {
         _uiState.update { state ->
             state.copy(
@@ -49,6 +72,9 @@ class MyViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 展开或收起“其他登录方式”区域。
+     */
     fun toggleOtherMethods() {
         _uiState.update { state ->
             state.copy(
@@ -59,6 +85,11 @@ class MyViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 选择登录方式。
+     *
+     * @param method 用户刚刚选择的登录方式。
+     */
     fun selectLoginMethod(method: LoginMethod) {
         _uiState.update { state ->
             state.copy(
@@ -72,26 +103,40 @@ class MyViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 处理帮助按钮点击。
+     */
     fun onHelpClick() {
         _uiState.update { state ->
             state.copy(
                 loginState = state.loginState.copy(
-                    helperText = "登录遇到问题可尝试切换其他方式，或找回账号"
+                    helperText = "Try another sign-in method or recover your account."
                 )
             )
         }
     }
 
+    /**
+     * 处理账号恢复入口点击。
+     */
     fun onRecoverAccountClick() {
         _uiState.update { state ->
             state.copy(
                 loginState = state.loginState.copy(
-                    helperText = "找回流程暂未接真实接口，当前先保留页面交互"
+                    helperText = "Account recovery is not connected yet."
                 )
             )
         }
     }
 
+    /**
+     * 提交登录操作。
+     *
+     * 当前实现是一个前端模拟流程：
+     * 先校验协议勾选状态，再展示加载文案，最后延迟后切到已登录态。
+     *
+     * @param method 本次使用的登录方式。
+     */
     fun submitLogin(method: LoginMethod) {
         val currentState = _uiState.value
         if (currentState.loginState.isSubmitting) return
@@ -101,7 +146,7 @@ class MyViewModel @Inject constructor(
                     loginState = state.loginState.copy(
                         selectedMethod = method,
                         showAgreementError = true,
-                        helperText = "请先勾选协议，再继续登录"
+                        helperText = "Accept the agreement before continuing."
                     )
                 )
             }
@@ -119,53 +164,72 @@ class MyViewModel @Inject constructor(
                     )
                 )
             }
+
+            // 这里用短暂延迟模拟真实登录请求耗时。
             delay(900)
-            loadProfile(loggedIn = true)
+            loadProfile(loggedIn = true, forceRefresh = true)
         }
     }
 
+    /**
+     * 生成某种登录方式对应的帮助文案。
+     */
     private fun helperTextFor(method: LoginMethod): String {
         return when (method) {
-            LoginMethod.WECHAT -> "使用微信快速登录，同步常用社交关系"
-            LoginMethod.APPLE -> "使用 Apple 登录，更适合轻量注册"
-            LoginMethod.PHONE -> "使用手机号登录，便于后续找回账号"
-            LoginMethod.QQ -> "使用 QQ 登录，适合已有 QQ 账号的用户"
+            LoginMethod.WECHAT -> "Use WeChat for a fast sign-in."
+            LoginMethod.APPLE -> "Use Apple for a lightweight registration flow."
+            LoginMethod.PHONE -> "Use your phone number for easier recovery."
+            LoginMethod.QQ -> "Use QQ if that is already your primary account."
         }
     }
 
+    /**
+     * 生成登录提交中的加载文案。
+     */
     private fun loadingTextFor(method: LoginMethod): String {
         return when (method) {
-            LoginMethod.WECHAT -> "正在拉起微信登录..."
-            LoginMethod.APPLE -> "正在校验 Apple 账号..."
-            LoginMethod.PHONE -> "正在准备手机号验证..."
-            LoginMethod.QQ -> "正在拉起 QQ 登录..."
+            LoginMethod.WECHAT -> "Opening WeChat sign-in..."
+            LoginMethod.APPLE -> "Verifying Apple account..."
+            LoginMethod.PHONE -> "Preparing phone verification..."
+            LoginMethod.QQ -> "Opening QQ sign-in..."
         }
     }
 
-    private fun loadProfile(loggedIn: Boolean = false) {
+    /**
+     * 加载“我的”页数据。
+     *
+     * @param loggedIn 是否按已登录态加载。
+     * @param forceRefresh 是否强制刷新底层数据源。
+     */
+    private fun loadProfile(loggedIn: Boolean = false, forceRefresh: Boolean = false) {
         viewModelScope.launch {
-            runCatching { loadMyUiState(loggedIn) }
-                .onSuccess { loaded ->
-                    val currentLogin = _uiState.value.loginState
-                    _uiState.value = if (loggedIn) {
-                        loaded.copy(isLoggedIn = true)
-                    } else {
-                        loaded.copy(
-                            loginState = currentLogin
-                        )
-                    }
+            runCatching {
+                loadMyUiState(
+                    LoadMyUiStateParams(
+                        loggedIn = loggedIn,
+                        forceRefresh = forceRefresh
+                    )
+                )
+            }.onSuccess { loaded ->
+                val currentLogin = _uiState.value.loginState
+                _uiState.value = if (loggedIn) {
+                    // 登录成功后直接切到已登录态，由后端/用例返回完整主页数据。
+                    loaded.copy(isLoggedIn = true)
+                } else {
+                    // 未登录刷新时保留当前登录面板交互状态，避免界面闪回默认值。
+                    loaded.copy(loginState = currentLogin)
                 }
-                .onFailure {
-                    AppLogger.e("MyViewModel", "Failed to load my page state.", it)
-                    _uiState.update { state ->
-                        state.copy(
-                            loginState = state.loginState.copy(
-                                isSubmitting = false,
-                                helperText = "页面加载失败，请稍后重试"
-                            )
+            }.onFailure {
+                AppLogger.e("MyViewModel", "Failed to load my page state.", it)
+                _uiState.update { state ->
+                    state.copy(
+                        loginState = state.loginState.copy(
+                            isSubmitting = false,
+                            helperText = "Failed to load page. Try again later."
                         )
-                    }
+                    )
                 }
+            }
         }
     }
 }

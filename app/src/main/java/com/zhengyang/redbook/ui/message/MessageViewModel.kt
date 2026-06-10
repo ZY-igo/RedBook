@@ -2,8 +2,8 @@ package com.zhengyang.redbook.ui.message
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.zhengyang.redbook.usecase.LoadMessageUiStateParams
 import com.zhengyang.redbook.usecase.LoadMessageUiStateUseCase
-import com.zhengyang.redbook.usecase.NoParams
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,17 +21,17 @@ class MessageViewModel @Inject constructor(
     val uiState: StateFlow<MessageUiState> = _uiState.asStateFlow()
 
     init {
-        loadMessageData()
+        loadMessageData(forceRefresh = false)
     }
 
-    private fun loadMessageData() {
+    private fun loadMessageData(forceRefresh: Boolean) {
         viewModelScope.launch {
-            _uiState.value = loadMessageUiState(NoParams)
+            _uiState.value = loadMessageUiState(LoadMessageUiStateParams(forceRefresh))
         }
     }
 
     fun reload() {
-        loadMessageData()
+        loadMessageData(forceRefresh = true)
     }
 
     fun dismissPerson(personId: String) {

@@ -15,6 +15,11 @@ import com.zhengyang.redbook.databinding.ItemNoteBinding
 import com.zhengyang.redbook.utils.AppLogger
 import com.zhengyang.redbook.utils.dpToPx
 
+/**
+ * 首页卡片 ViewHolder。
+ *
+ * 负责处理正常卡片、视频卡片和骨架卡片的绑定与资源清理。
+ */
 class HomeViewHolder(
     private val binding: ItemNoteBinding,
     private val imageLoader: ImageLoader
@@ -24,6 +29,12 @@ class HomeViewHolder(
         private const val TAG = "HomeAvatar"
     }
 
+    /**
+     * 绑定一个首页卡片。
+     *
+     * @param item 当前需要展示的卡片数据。
+     * @param onItemClick 条目点击回调。
+     */
     fun bind(item: HomeCardItem, onItemClick: ((HomeCardItem) -> Unit)?) {
         if (item.isSkeleton) {
             bindSkeleton(item)
@@ -54,8 +65,14 @@ class HomeViewHolder(
         binding.root.setOnClickListener { onItemClick?.invoke(item) }
     }
 
+    /**
+     * 条目离开窗口时的轻量回调。
+     */
     fun onDetached() = Unit
 
+    /**
+     * 主动释放当前 ViewHolder 持有的图片和播放器资源。
+     */
     fun recycle() {
         binding.root.setOnClickListener(null)
         binding.ivCover.dispose()
@@ -67,18 +84,29 @@ class HomeViewHolder(
         binding.videoPlayerView.player = null
     }
 
+    /**
+     * 绑定图片类卡片。
+     */
     private fun bindImage(item: HomeCardItem) {
         binding.videoPlayerView.visibility = View.GONE
         binding.ivPlayIndicator.visibility = View.GONE
         loadCover(item.imageUrl ?: item.videoCoverUrl)
     }
 
+    /**
+     * 绑定视频类卡片。
+     *
+     * 这里仍然只加载封面，不直接启动播放器。
+     */
     private fun bindVideo(item: HomeCardItem) {
         binding.videoPlayerView.visibility = View.GONE
         binding.ivPlayIndicator.visibility = View.VISIBLE
         loadCover(item.videoCoverUrl ?: item.imageUrl)
     }
 
+    /**
+     * 绑定骨架屏占位卡片。
+     */
     private fun bindSkeleton(item: HomeCardItem) {
         binding.coverContainer.layoutParams = binding.coverContainer.layoutParams.apply {
             height = item.coverHeightDp.dpToPx()
@@ -111,6 +139,9 @@ class HomeViewHolder(
         binding.tvLikeCount.background = createTextPlaceholder()
     }
 
+    /**
+     * 清理骨架屏给文本和图片留下的占位背景。
+     */
     private fun clearPlaceholderState() {
         binding.ivCover.background = null
         binding.ivAvatar.background = null
@@ -120,6 +151,11 @@ class HomeViewHolder(
         binding.tvMediaBadge.visibility = View.VISIBLE
     }
 
+    /**
+     * 绑定作者头像。
+     *
+     * 如果远程头像加载失败，则回退到作者首字母头像。
+     */
     private fun bindAvatar(author: String, avatarUrl: String?, avatarColorHex: String) {
         AppLogger.d(TAG, "bind card avatar, author=$author, avatarUrl=$avatarUrl")
         binding.ivAvatar.dispose()
@@ -178,6 +214,9 @@ class HomeViewHolder(
         )
     }
 
+    /**
+     * 创建文本占位块背景。
+     */
     private fun createTextPlaceholder(): GradientDrawable {
         return GradientDrawable().apply {
             cornerRadius = 4.dpToPx().toFloat()
@@ -185,6 +224,9 @@ class HomeViewHolder(
         }
     }
 
+    /**
+     * 加载卡片封面图。
+     */
     private fun loadCover(url: String?) {
         imageLoader.enqueue(
             ImageRequest.Builder(binding.ivCover.context)

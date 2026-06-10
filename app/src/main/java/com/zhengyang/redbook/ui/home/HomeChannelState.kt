@@ -1,8 +1,3 @@
-/**
- * 文件说明：HomeChannelState.kt
- * 作用：维护首页频道选择与排序相关的纯状态逻辑。
- * 备注：该注释用于说明当前文件在项目中的职责，方便后续维护时快速建立上下文。
- */
 package com.zhengyang.redbook.ui.home
 
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,24 +6,36 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
 /**
- * 首页频道状态容器
+ * 首页频道纯状态容器。
  *
- * 负责维护全量频道、我的频道和当前选中频道之间的一致性，
- * 并提供纯状态层面的新增、删除和同步逻辑。
+ * 负责维护全部频道、我的频道和当前选中频道之间的一致性。
  */
 class HomeChannelState {
-    /** 首页频道内部可变快照流。 */
+    /**
+     * 内部可变频道快照。
+     */
     private val _state = MutableStateFlow(HomeChannelSnapshot())
 
-    /** 对外暴露的只读频道快照流。 */
+    /**
+     * 对外暴露的只读频道状态流。
+     */
     val state: StateFlow<HomeChannelSnapshot> = _state.asStateFlow()
 
+    /**
+     * 当前全部频道。
+     */
     val allChannels: List<DiscoverCategoryItem>
         get() = _state.value.allChannels
 
+    /**
+     * 当前“我的频道”列表。
+     */
     val myChannels: List<DiscoverCategoryItem>
         get() = _state.value.myChannels
 
+    /**
+     * 当前选中频道。
+     */
     val currentCategory: DiscoverCategoryItem?
         get() = _state.value.currentCategory
 
@@ -53,7 +60,8 @@ class HomeChannelState {
             HomeChannelSnapshot(
                 allChannels = categories,
                 myChannels = nextMyChannels,
-                currentCategory = nextMyChannels.firstOrNull { it.id == currentId } ?: nextMyChannels.firstOrNull()
+                currentCategory = nextMyChannels.firstOrNull { it.id == currentId }
+                    ?: nextMyChannels.firstOrNull()
             )
         }
     }
@@ -72,10 +80,10 @@ class HomeChannelState {
     }
 
     /**
-     * 新增一个“我的频道”。
+     * 向“我的频道”追加频道。
      *
-     * @param category 需要新增的频道。
-     * @return `true` 表示频道已成功加入当前列表。
+     * @param category 待添加频道。
+     * @return 是否成功添加。
      */
     fun addChannel(category: DiscoverCategoryItem): Boolean {
         var added = false
@@ -91,10 +99,10 @@ class HomeChannelState {
     }
 
     /**
-     * 从“我的频道”中移除一个频道。
+     * 从“我的频道”移除频道。
      *
-     * @param category 需要移除的频道。
-     * @return `true` 表示频道已成功移除。
+     * @param category 待移除频道。
+     * @return 是否成功移除。
      */
     fun removeChannel(category: DiscoverCategoryItem): Boolean {
         var removed = false
@@ -118,19 +126,19 @@ class HomeChannelState {
     }
 
     /**
-     * 判断频道是否允许被移除。
+     * 判断频道当前是否允许移除。
      *
      * @param category 待判断频道。
-     * @return `true` 表示当前状态下允许移除。
+     * @return 是否允许移除。
      */
     fun canRemoveChannel(category: DiscoverCategoryItem): Boolean {
         return canRemoveChannel(category, _state.value)
     }
 
     /**
-     * 查找“附近”页签使用的兜底频道。
+     * 查找“附近”页签的兜底频道。
      *
-     * @return 旅行频道；若不存在则返回 `null`。
+     * @return 合适的兜底频道；没有时返回 `null`。
      */
     fun findNearbyFallbackCategory(): DiscoverCategoryItem? {
         val channels = _state.value.allChannels
@@ -141,11 +149,7 @@ class HomeChannelState {
     }
 
     /**
-     * 基于指定快照判断频道是否可移除。
-     *
-     * @param category 待判断频道。
-     * @param snapshot 当前用于判断的频道快照。
-     * @return `true` 表示频道可移除。
+     * 基于指定快照判断频道是否允许被移除。
      */
     private fun canRemoveChannel(
         category: DiscoverCategoryItem,
@@ -155,26 +159,32 @@ class HomeChannelState {
     }
 
     private companion object {
-        /** “我的频道”允许保留的最小频道数量。 */
+        /**
+         * “我的频道”至少保留的数量。
+         */
         private const val MIN_CHANNEL_COUNT = 1
-        /** 推荐频道固定标识，不允许被移除。 */
+
+        /**
+         * 推荐频道固定 id，不允许删除。
+         */
         private const val RECOMMEND_CHANNEL_ID = "recommend"
-        /** “附近”页签优先使用的旅行频道标识。 */
+
+        /**
+         * “附近”页签偏好的旅行频道 id。
+         */
         private const val TRAVEL_CHANNEL_ID = "travel"
     }
 }
 
 /**
- * 首页频道状态快照
+ * 频道状态快照。
  *
- * 用于同时描述全量频道、我的频道和当前选中频道，
- * 便于频道相关逻辑以不可变对象方式更新。
+ * @property allChannels 全部频道。
+ * @property myChannels 当前“我的频道”列表。
+ * @property currentCategory 当前选中频道。
  */
 data class HomeChannelSnapshot(
-    /** 全量频道列表。 */
     val allChannels: List<DiscoverCategoryItem> = emptyList(),
-    /** 当前“我的频道”列表。 */
     val myChannels: List<DiscoverCategoryItem> = emptyList(),
-    /** 当前选中的频道。 */
     val currentCategory: DiscoverCategoryItem? = null
 )

@@ -1,13 +1,8 @@
-/**
- * 文件说明：MyFragment.kt
- * 作用：承载 My Fragment 相关页面区块的视图渲染、状态呈现与交互逻辑。
- * 备注：用于标注当前源码文件的职责，便于后续维护与排查。
- */
 package com.zhengyang.redbook.ui.my
 
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
-import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -34,17 +29,45 @@ import com.zhengyang.redbook.utils.AppLogger
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
+/**
+ * “我的”页面 Fragment。
+ *
+ * 负责渲染登录态和未登录态页面，
+ * 并处理顶部滚动效果、标签切换和局部交互事件。
+ */
 @AndroidEntryPoint
 class MyFragment : Fragment() {
 
     companion object {
+        /**
+         * 头像加载日志标签。
+         */
         private const val TAG = "MyAvatar"
     }
 
+    /**
+     * Fragment 视图绑定，仅在 View 生命周期内有效。
+     */
     private var _binding: FragmentMyBinding? = null
+
+    /**
+     * 非空绑定访问器。
+     */
     private val binding get() = _binding!!
+
+    /**
+     * 页面状态提供者。
+     */
     private val viewModel: MyViewModel by viewModels()
 
+    /**
+     * 创建 Fragment 的根视图并初始化 ViewBinding。
+     *
+     * @param inflater 布局加载器。
+     * @param container 父容器。
+     * @param savedInstanceState 恢复状态快照。
+     * @return 当前 Fragment 的根视图。
+     */
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -54,6 +77,12 @@ class MyFragment : Fragment() {
         return binding.root
     }
 
+    /**
+     * 初始化页面交互、顶部效果和状态收集。
+     *
+     * 这里会集中注册所有点击事件，
+     * 并为三个内容 tab 建立默认选中状态。
+     */
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         setupSystemBarInsets()
@@ -106,11 +135,19 @@ class MyFragment : Fragment() {
         selectTab(binding.tabNote, R.string.me_empty_note)
     }
 
+    /**
+     * 页面重新回到前台时刷新资料状态。
+     *
+     * 这样可以在编辑资料页返回后及时同步最新头像等信息。
+     */
     override fun onResume() {
         super.onResume()
         viewModel.refresh()
     }
 
+    /**
+     * 处理状态栏 inset，把顶部操作栏顶开到安全区域之下。
+     */
     private fun setupSystemBarInsets() {
         val baseTopPadding = binding.topActionBar.paddingTop
         ViewCompat.setOnApplyWindowInsetsListener(binding.topActionBar) { view, insets ->
@@ -126,6 +163,9 @@ class MyFragment : Fragment() {
         binding.topActionBar.doOnAttach { ViewCompat.requestApplyInsets(it) }
     }
 
+    /**
+     * 配置顶部栏随滚动变化的透明度和颜色过渡效果。
+     */
     private fun setupTopBarScrollEffects() {
         val quickFadeDistance = 36.dpToPx()
         val toneShiftDistance = 140.dpToPx()
@@ -152,6 +192,9 @@ class MyFragment : Fragment() {
         }
     }
 
+    /**
+     * 收集 ViewModel 状态并驱动页面渲染。
+     */
     private fun collectUiState() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -160,6 +203,11 @@ class MyFragment : Fragment() {
         }
     }
 
+    /**
+     * 渲染整个页面。
+     *
+     * @param state 当前最新页面状态。
+     */
     private fun render(state: MyUiState) {
         val binding = _binding ?: return
         if (!state.isLoggedIn) {
@@ -167,6 +215,7 @@ class MyFragment : Fragment() {
             return
         }
 
+        // 先切换到已登录态外壳，再填充个人资料和统计信息。
         renderLoggedInChrome()
         binding.profileNameText.text = state.profile.name
         binding.profileUserIdText.text = "小红书号: ${state.profile.id}"
@@ -174,21 +223,25 @@ class MyFragment : Fragment() {
         binding.topBarAvatar.text = state.profile.avatarText
         binding.profileBioText.text = state.profile.bio?.takeIf { it.isNotBlank() }
             ?: getString(R.string.me_no_bio)
+
         val avatarBackground = createAvatarBackground(state.profile.avatarColorHex)
         binding.profileAvatarText.background = avatarBackground
         binding.topBarAvatar.background = createAvatarBackground(state.profile.avatarColorHex)
         bindAvatar(binding.profileAvatarImage, binding.profileAvatarText, state.profile.avatarUrl)
         bindAvatar(binding.topBarAvatarImage, binding.topBarAvatar, state.profile.avatarUrl)
+
         binding.followingCountText.text = state.stats.followingCount
         binding.fansCountText.text = state.stats.fansCount
         binding.likesCountText.text = state.stats.likesCount
 
+        // 兴趣推荐区是可关闭模块，因此要同时看可见标记和数据是否为空。
         val showInterestSection =
             state.isInterestSectionVisible && state.interestPeople.isNotEmpty()
         binding.interestPeopleSection.isVisible = showInterestSection
         binding.interestPeopleContainer.removeAllViews()
 
         if (showInterestSection) {
+            // 这里直接动态 inflate 子项，数据量较小时实现足够直接。
             state.interestPeople.forEach { person ->
                 val personBinding = LayoutMyInterestPersonBinding.inflate(
                     layoutInflater,
@@ -205,6 +258,11 @@ class MyFragment : Fragment() {
         }
     }
 
+    /**
+     * 渲染未登录态页面。
+     *
+     * @param state 当前登录面板状态。
+     */
     private fun renderLoggedOutState(state: MyLoginUiState) {
         binding.scrollContainer.isVisible = false
         binding.loginGuestContainer.isVisible = true
@@ -219,6 +277,9 @@ class MyFragment : Fragment() {
         renderLoginState(state)
     }
 
+    /**
+     * 渲染已登录态下固定显示的页面骨架。
+     */
     private fun renderLoggedInChrome() {
         binding.scrollContainer.isVisible = true
         binding.loginGuestContainer.isVisible = false
@@ -228,6 +289,11 @@ class MyFragment : Fragment() {
         binding.buttonHelp.isVisible = false
     }
 
+    /**
+     * 渲染登录面板局部状态。
+     *
+     * @param state 当前登录面板状态。
+     */
     private fun renderLoginState(state: MyLoginUiState) {
         binding.loginAgreementIndicator.setBackgroundResource(
             if (state.isAgreementChecked) {
@@ -239,7 +305,11 @@ class MyFragment : Fragment() {
         binding.loginAgreementText.setTextColor(
             ContextCompat.getColor(
                 requireContext(),
-                if (state.showAgreementError) R.color.xhs_accent else R.color.xhs_login_text_tertiary
+                if (state.showAgreementError) {
+                    R.color.xhs_accent
+                } else {
+                    R.color.xhs_login_text_tertiary
+                }
             )
         )
         binding.buttonOtherLogin.text = getString(
@@ -253,6 +323,7 @@ class MyFragment : Fragment() {
         binding.loginHelperText.text = state.helperText
         binding.loginLoadingIndicator.isVisible = state.isSubmitting
 
+        // 提交期间禁用所有登录入口，避免重复点击造成状态抖动。
         binding.buttonWechatLogin.isEnabled = !state.isSubmitting
         binding.buttonAppleLogin.isEnabled = !state.isSubmitting
         binding.buttonPhoneLogin.isEnabled = !state.isSubmitting
@@ -272,10 +343,22 @@ class MyFragment : Fragment() {
             if (state.selectedMethod == LoginMethod.QQ) selectedAlpha else 0.92f
     }
 
+    /**
+     * 为底部 tab 注册点击切换逻辑。
+     *
+     * @param tab 需要绑定的 tab。
+     * @param emptyTextRes 该 tab 对应的空态文案资源。
+     */
     private fun setupTab(tab: TextView, emptyTextRes: Int) {
         tab.setOnClickListener { selectTab(tab, emptyTextRes) }
     }
 
+    /**
+     * 切换底部 tab 选中状态。
+     *
+     * @param selectedTab 当前选中的 tab。
+     * @param emptyTextRes 当前 tab 对应的空态文案。
+     */
     private fun selectTab(selectedTab: TextView, emptyTextRes: Int) {
         val activeColor = ContextCompat.getColor(requireContext(), R.color.xhs_text_primary)
         val inactiveColor = ContextCompat.getColor(requireContext(), R.color.xhs_text_secondary)
@@ -291,10 +374,21 @@ class MyFragment : Fragment() {
         binding.emptyTitle.setText(emptyTextRes)
     }
 
+    /**
+     * 展示兴趣推荐里的关注提示。
+     *
+     * 当前还没有真正接入关注接口，因此先用 Toast 占位。
+     */
     private fun showFollowToast() {
         Toast.makeText(requireContext(), R.string.message_toast_follow, Toast.LENGTH_SHORT).show()
     }
 
+    /**
+     * 创建文字头像背景。
+     *
+     * @param colorHex 头像底色。
+     * @return 圆形背景 drawable。
+     */
     private fun createAvatarBackground(colorHex: String): GradientDrawable {
         return GradientDrawable().apply {
             shape = GradientDrawable.OVAL
@@ -302,6 +396,15 @@ class MyFragment : Fragment() {
         }
     }
 
+    /**
+     * 绑定头像视图。
+     *
+     * 当远程头像为空或加载失败时，会退回到文字头像显示。
+     *
+     * @param imageView 图片头像控件。
+     * @param textView 文字头像控件。
+     * @param avatarUrl 远程头像地址。
+     */
     private fun bindAvatar(imageView: ImageView, textView: TextView, avatarUrl: String?) {
         AppLogger.d(TAG, "bind my avatar, avatarUrl=$avatarUrl")
         if (avatarUrl.isNullOrBlank()) {
@@ -327,11 +430,17 @@ class MyFragment : Fragment() {
         }
     }
 
+    /**
+     * 销毁视图时释放对 binding 的引用，避免内存泄漏。
+     */
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
     }
 
+    /**
+     * 把 dp 值转换成像素值。
+     */
     private fun Int.dpToPx(): Int {
         return (this * resources.displayMetrics.density).toInt()
     }
