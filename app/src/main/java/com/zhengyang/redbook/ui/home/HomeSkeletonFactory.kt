@@ -3,7 +3,7 @@ package com.zhengyang.redbook.ui.home
 /**
  * 首页骨架屏数据工厂。
  *
- * 统一生成“发现”和“关注”区域在加载中的占位卡片。
+ * 统一生成“发现”和“关注”区域在加载过程中的占位卡片。
  */
 object HomeSkeletonFactory {
 
