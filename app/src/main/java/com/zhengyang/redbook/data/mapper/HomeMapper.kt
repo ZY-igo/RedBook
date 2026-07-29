@@ -89,7 +89,7 @@ class HomeMapper @Inject constructor() {
         return DiscoverCategoryItem(
             id = category.id,
             title = category.title,
-            bucket = DiscoverCategoryBucket.valueOf(category.bucket),
+            bucket = category.bucket.toDiscoverCategoryBucket(),
             usesWaterfall = category.usesWaterfall,
             isDefaultSelected = category.isDefaultSelected
         )
@@ -137,5 +137,10 @@ class HomeMapper @Inject constructor() {
             MediaType.LONG_FORM.name -> MediaType.LONG_FORM
             else -> MediaType.IMAGE
         }
+    }
+
+    private fun String.toDiscoverCategoryBucket(): DiscoverCategoryBucket {
+        return runCatching { DiscoverCategoryBucket.valueOf(uppercase()) }
+            .getOrDefault(DiscoverCategoryBucket.RECOMMEND)
     }
 }

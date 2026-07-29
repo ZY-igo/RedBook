@@ -1,13 +1,17 @@
 package com.zhengyang.redbook.ui.my
 
+import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.text.InputType
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.EditText
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
@@ -25,49 +29,26 @@ import coil.load
 import com.zhengyang.redbook.R
 import com.zhengyang.redbook.databinding.FragmentMyBinding
 import com.zhengyang.redbook.databinding.LayoutMyInterestPersonBinding
+import com.zhengyang.redbook.media.MediaPlayerFactory
 import com.zhengyang.redbook.utils.AppLogger
+import com.zhengyang.redbook.utils.applyCircleAvatarDefaults
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-/**
- * “我的”页面 Fragment。
- *
- * 负责渲染登录态和未登录态页面，
- * 并处理顶部滚动效果、标签切换和局部交互事件。
- */
 @AndroidEntryPoint
 class MyFragment : Fragment() {
 
     companion object {
-        /**
-         * 头像加载日志标签。
-         */
         private const val TAG = "MyAvatar"
     }
 
-    /**
-     * Fragment 视图绑定，仅在 View 生命周期内有效。
-     */
     private var _binding: FragmentMyBinding? = null
-
-    /**
-     * 非空绑定访问器。
-     */
     private val binding get() = _binding!!
-
-    /**
-     * 页面状态提供者。
-     */
     private val viewModel: MyViewModel by viewModels()
+    private var currentState: MyUiState = MyUiState()
 
-    /**
-     * 创建 Fragment 的根视图并初始化 ViewBinding。
-     *
-     * @param inflater 布局加载器。
-     * @param container 父容器。
-     * @param savedInstanceState 恢复状态快照。
-     * @return 当前 Fragment 的根视图。
-     */
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -77,17 +58,12 @@ class MyFragment : Fragment() {
         return binding.root
     }
 
-    /**
-     * 初始化页面交互、顶部效果和状态收集。
-     *
-     * 这里会集中注册所有点击事件，
-     * 并为三个内容 tab 建立默认选中状态。
-     */
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         setupSystemBarInsets()
         setupTopBarScrollEffects()
 
+        binding.buttonMenu.setOnClickListener { showLogoutAndClearCacheDialog() }
         binding.buttonEditHome.setOnClickListener {
             startActivity(Intent(requireContext(), EditProfileActivity::class.java))
         }
@@ -101,10 +77,10 @@ class MyFragment : Fragment() {
             Toast.makeText(requireContext(), R.string.toast_add_placeholder, Toast.LENGTH_SHORT).show()
         }
         binding.buttonWechatLogin.setOnClickListener {
-            viewModel.submitLogin(LoginMethod.WECHAT)
+            showLoginDialog(LoginMethod.WECHAT, recoverMode = false)
         }
         binding.buttonAppleLogin.setOnClickListener {
-            viewModel.submitLogin(LoginMethod.APPLE)
+            showLoginDialog(LoginMethod.APPLE, recoverMode = false)
         }
         binding.buttonOtherLogin.setOnClickListener {
             viewModel.toggleOtherMethods()
@@ -114,6 +90,7 @@ class MyFragment : Fragment() {
         }
         binding.loginRecoverText.setOnClickListener {
             viewModel.onRecoverAccountClick()
+            showLoginDialog(currentState.loginState.selectedMethod, recoverMode = true)
         }
         binding.loginAgreementIndicator.setOnClickListener {
             viewModel.toggleAgreement()
@@ -122,10 +99,10 @@ class MyFragment : Fragment() {
             viewModel.toggleAgreement()
         }
         binding.buttonPhoneLogin.setOnClickListener {
-            viewModel.submitLogin(LoginMethod.PHONE)
+            showLoginDialog(LoginMethod.PHONE, recoverMode = false)
         }
         binding.buttonQqLogin.setOnClickListener {
-            viewModel.submitLogin(LoginMethod.QQ)
+            showLoginDialog(LoginMethod.QQ, recoverMode = false)
         }
 
         collectUiState()
@@ -135,19 +112,11 @@ class MyFragment : Fragment() {
         selectTab(binding.tabNote, R.string.me_empty_note)
     }
 
-    /**
-     * 页面重新回到前台时刷新资料状态。
-     *
-     * 这样可以在编辑资料页返回后及时同步最新头像等信息。
-     */
     override fun onResume() {
         super.onResume()
         viewModel.refresh()
     }
 
-    /**
-     * 处理状态栏 inset，把顶部操作栏顶开到安全区域之下。
-     */
     private fun setupSystemBarInsets() {
         val baseTopPadding = binding.topActionBar.paddingTop
         ViewCompat.setOnApplyWindowInsetsListener(binding.topActionBar) { view, insets ->
@@ -163,9 +132,6 @@ class MyFragment : Fragment() {
         binding.topActionBar.doOnAttach { ViewCompat.requestApplyInsets(it) }
     }
 
-    /**
-     * 配置顶部栏随滚动变化的透明度和颜色过渡效果。
-     */
     private fun setupTopBarScrollEffects() {
         val quickFadeDistance = 36.dpToPx()
         val toneShiftDistance = 140.dpToPx()
@@ -192,9 +158,6 @@ class MyFragment : Fragment() {
         }
     }
 
-    /**
-     * 收集 ViewModel 状态并驱动页面渲染。
-     */
     private fun collectUiState() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -203,19 +166,14 @@ class MyFragment : Fragment() {
         }
     }
 
-    /**
-     * 渲染整个页面。
-     *
-     * @param state 当前最新页面状态。
-     */
     private fun render(state: MyUiState) {
         val binding = _binding ?: return
+        currentState = state
         if (!state.isLoggedIn) {
             renderLoggedOutState(state.loginState)
             return
         }
 
-        // 先切换到已登录态外壳，再填充个人资料和统计信息。
         renderLoggedInChrome()
         binding.profileNameText.text = state.profile.name
         binding.profileUserIdText.text = "小红书号: ${state.profile.id}"
@@ -234,14 +192,12 @@ class MyFragment : Fragment() {
         binding.fansCountText.text = state.stats.fansCount
         binding.likesCountText.text = state.stats.likesCount
 
-        // 兴趣推荐区是可关闭模块，因此要同时看可见标记和数据是否为空。
         val showInterestSection =
             state.isInterestSectionVisible && state.interestPeople.isNotEmpty()
         binding.interestPeopleSection.isVisible = showInterestSection
         binding.interestPeopleContainer.removeAllViews()
 
         if (showInterestSection) {
-            // 这里直接动态 inflate 子项，数据量较小时实现足够直接。
             state.interestPeople.forEach { person ->
                 val personBinding = LayoutMyInterestPersonBinding.inflate(
                     layoutInflater,
@@ -258,11 +214,6 @@ class MyFragment : Fragment() {
         }
     }
 
-    /**
-     * 渲染未登录态页面。
-     *
-     * @param state 当前登录面板状态。
-     */
     private fun renderLoggedOutState(state: MyLoginUiState) {
         binding.scrollContainer.isVisible = false
         binding.loginGuestContainer.isVisible = true
@@ -277,9 +228,6 @@ class MyFragment : Fragment() {
         renderLoginState(state)
     }
 
-    /**
-     * 渲染已登录态下固定显示的页面骨架。
-     */
     private fun renderLoggedInChrome() {
         binding.scrollContainer.isVisible = true
         binding.loginGuestContainer.isVisible = false
@@ -289,11 +237,6 @@ class MyFragment : Fragment() {
         binding.buttonHelp.isVisible = false
     }
 
-    /**
-     * 渲染登录面板局部状态。
-     *
-     * @param state 当前登录面板状态。
-     */
     private fun renderLoginState(state: MyLoginUiState) {
         binding.loginAgreementIndicator.setBackgroundResource(
             if (state.isAgreementChecked) {
@@ -323,7 +266,6 @@ class MyFragment : Fragment() {
         binding.loginHelperText.text = state.helperText
         binding.loginLoadingIndicator.isVisible = state.isSubmitting
 
-        // 提交期间禁用所有登录入口，避免重复点击造成状态抖动。
         binding.buttonWechatLogin.isEnabled = !state.isSubmitting
         binding.buttonAppleLogin.isEnabled = !state.isSubmitting
         binding.buttonPhoneLogin.isEnabled = !state.isSubmitting
@@ -343,22 +285,10 @@ class MyFragment : Fragment() {
             if (state.selectedMethod == LoginMethod.QQ) selectedAlpha else 0.92f
     }
 
-    /**
-     * 为底部 tab 注册点击切换逻辑。
-     *
-     * @param tab 需要绑定的 tab。
-     * @param emptyTextRes 该 tab 对应的空态文案资源。
-     */
     private fun setupTab(tab: TextView, emptyTextRes: Int) {
         tab.setOnClickListener { selectTab(tab, emptyTextRes) }
     }
 
-    /**
-     * 切换底部 tab 选中状态。
-     *
-     * @param selectedTab 当前选中的 tab。
-     * @param emptyTextRes 当前 tab 对应的空态文案。
-     */
     private fun selectTab(selectedTab: TextView, emptyTextRes: Int) {
         val activeColor = ContextCompat.getColor(requireContext(), R.color.xhs_text_primary)
         val inactiveColor = ContextCompat.getColor(requireContext(), R.color.xhs_text_secondary)
@@ -374,21 +304,80 @@ class MyFragment : Fragment() {
         binding.emptyTitle.setText(emptyTextRes)
     }
 
-    /**
-     * 展示兴趣推荐里的关注提示。
-     *
-     * 当前还没有真正接入关注接口，因此先用 Toast 占位。
-     */
     private fun showFollowToast() {
         Toast.makeText(requireContext(), R.string.message_toast_follow, Toast.LENGTH_SHORT).show()
     }
 
-    /**
-     * 创建文字头像背景。
-     *
-     * @param colorHex 头像底色。
-     * @return 圆形背景 drawable。
-     */
+    private fun showLoginDialog(method: LoginMethod, recoverMode: Boolean) {
+        viewModel.selectLoginMethod(method)
+        val loginStateSnapshot = viewModel.uiState.value.loginState
+        val dialogContext = requireContext()
+        val container = LinearLayout(dialogContext).apply {
+            orientation = LinearLayout.VERTICAL
+            val padding = 20.dpToPx()
+            setPadding(padding, 12.dpToPx(), padding, 0)
+        }
+        val userIdInput = EditText(dialogContext).apply {
+            hint = "账号 ID，可留空自动创建"
+            setText(loginStateSnapshot.suggestedUserId)
+            inputType = InputType.TYPE_CLASS_TEXT
+        }
+        val nicknameInput = EditText(dialogContext).apply {
+            hint = "昵称"
+            setText(loginStateSnapshot.suggestedNickname)
+            inputType = InputType.TYPE_CLASS_TEXT
+        }
+        container.addView(
+            userIdInput,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
+        val nicknameParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            topMargin = 12.dpToPx()
+        }
+        container.addView(nicknameInput, nicknameParams)
+
+        val title = when {
+            recoverMode -> "找回账号"
+            method == LoginMethod.PHONE -> "手机号入口登录"
+            method == LoginMethod.APPLE -> "Apple 登录"
+            method == LoginMethod.QQ -> "QQ 登录"
+            else -> "微信登录"
+        }
+
+        AlertDialog.Builder(dialogContext)
+            .setTitle(title)
+            .setMessage("输入已有账号 ID 可继续登录，留空账号 ID 会自动创建新账号。")
+            .setView(container)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton("继续") { _, _ ->
+                viewModel.submitLogin(
+                    method = method,
+                    rawUserId = userIdInput.text?.toString().orEmpty(),
+                    rawNickname = nicknameInput.text?.toString().orEmpty()
+                )
+            }
+            .show()
+    }
+
+    private fun showLogoutDialog() {
+        if (!currentState.isLoggedIn) return
+        AlertDialog.Builder(requireContext())
+            .setTitle("退出登录")
+            .setMessage("确认退出当前账号吗？")
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton("退出") { _, _ ->
+                viewModel.logout()
+                Toast.makeText(requireContext(), "已退出登录", Toast.LENGTH_SHORT).show()
+            }
+            .show()
+    }
+
     private fun createAvatarBackground(colorHex: String): GradientDrawable {
         return GradientDrawable().apply {
             shape = GradientDrawable.OVAL
@@ -396,15 +385,6 @@ class MyFragment : Fragment() {
         }
     }
 
-    /**
-     * 绑定头像视图。
-     *
-     * 当远程头像为空或加载失败时，会退回到文字头像显示。
-     *
-     * @param imageView 图片头像控件。
-     * @param textView 文字头像控件。
-     * @param avatarUrl 远程头像地址。
-     */
     private fun bindAvatar(imageView: ImageView, textView: TextView, avatarUrl: String?) {
         AppLogger.d(TAG, "bind my avatar, avatarUrl=$avatarUrl")
         if (avatarUrl.isNullOrBlank()) {
@@ -413,10 +393,11 @@ class MyFragment : Fragment() {
             textView.isVisible = true
             return
         }
+        // 我的页头像逻辑比较直接：有 URL 就请求，失败再回退到文字头像。
         imageView.isVisible = true
         textView.isVisible = false
         imageView.load(avatarUrl) {
-            crossfade(true)
+            applyCircleAvatarDefaults()
             listener(
                 onSuccess = { _, _ ->
                     AppLogger.d(TAG, "my avatar load success, avatarUrl=$avatarUrl")
@@ -430,17 +411,35 @@ class MyFragment : Fragment() {
         }
     }
 
-    /**
-     * 销毁视图时释放对 binding 的引用，避免内存泄漏。
-     */
+    private fun showLogoutAndClearCacheDialog() {
+        if (!currentState.isLoggedIn) return
+        AlertDialog.Builder(requireContext())
+            .setTitle("退出登录")
+            .setMessage("确认退出当前账号，并清理本机视频缓存吗？")
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton("退出") { _, _ ->
+                val appContext = requireContext().applicationContext
+                lifecycleScope.launch {
+                    val cacheCleared = withContext(Dispatchers.IO) {
+                        MediaPlayerFactory.clear(appContext)
+                    }
+                    viewModel.logout()
+                    val toastText = if (cacheCleared) {
+                        "已退出登录，并清理视频缓存"
+                    } else {
+                        "已退出登录，视频缓存清理失败"
+                    }
+                    Toast.makeText(requireContext(), toastText, Toast.LENGTH_SHORT).show()
+                }
+            }
+            .show()
+    }
+
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
     }
 
-    /**
-     * 把 dp 值转换成像素值。
-     */
     private fun Int.dpToPx(): Int {
         return (this * resources.displayMetrics.density).toInt()
     }

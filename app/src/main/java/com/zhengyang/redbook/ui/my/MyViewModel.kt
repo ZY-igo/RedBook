@@ -2,65 +2,42 @@ package com.zhengyang.redbook.ui.my
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.zhengyang.redbook.data.auth.AuthLoginRequest
+import com.zhengyang.redbook.data.auth.AuthRepository
+import com.zhengyang.redbook.push.PushRegistrationManager
 import com.zhengyang.redbook.usecase.LoadMyUiStateParams
 import com.zhengyang.redbook.usecase.LoadMyUiStateUseCase
 import com.zhengyang.redbook.utils.AppLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/**
- * “我的”页面 ViewModel。
- *
- * 负责加载个人主页状态，并管理未登录态下的登录面板交互状态。
- *
- * @property loadMyUiState 加载“我的”页面状态的用例。
- * @property uiState 提供给界面的只读状态流。
- */
 @HiltViewModel
 class MyViewModel @Inject constructor(
-    private val loadMyUiState: LoadMyUiStateUseCase
+    private val loadMyUiState: LoadMyUiStateUseCase,
+    private val authRepository: AuthRepository,
+    private val pushRegistrationManager: PushRegistrationManager
 ) : ViewModel() {
 
-    /**
-     * ViewModel 内部可变状态。
-     */
     private val _uiState = MutableStateFlow(MyUiState())
-
-    /**
-     * 暴露给 UI 层的只读状态流。
-     */
     val uiState: StateFlow<MyUiState> = _uiState.asStateFlow()
 
     init {
-        // 首次进入页面时先按当前默认登录态拉取一份初始数据。
-        loadProfile(forceRefresh = false)
+        restoreAndLoadProfile(forceRefresh = false)
     }
 
-    /**
-     * 主动刷新“我的”页数据。
-     */
     fun refresh() {
-        loadProfile(forceRefresh = true)
+        restoreAndLoadProfile(forceRefresh = true)
     }
 
-    /**
-     * 关闭兴趣推荐区域。
-     */
     fun dismissInterestSection() {
         _uiState.update { it.copy(isInterestSectionVisible = false) }
     }
 
-    /**
-     * 切换登录协议勾选状态。
-     *
-     * 同时清除上一次的协议错误提示。
-     */
     fun toggleAgreement() {
         _uiState.update { state ->
             state.copy(
@@ -72,9 +49,6 @@ class MyViewModel @Inject constructor(
         }
     }
 
-    /**
-     * 展开或收起“其他登录方式”区域。
-     */
     fun toggleOtherMethods() {
         _uiState.update { state ->
             state.copy(
@@ -85,11 +59,6 @@ class MyViewModel @Inject constructor(
         }
     }
 
-    /**
-     * 选择登录方式。
-     *
-     * @param method 用户刚刚选择的登录方式。
-     */
     fun selectLoginMethod(method: LoginMethod) {
         _uiState.update { state ->
             state.copy(
@@ -103,41 +72,35 @@ class MyViewModel @Inject constructor(
         }
     }
 
-    /**
-     * 处理帮助按钮点击。
-     */
     fun onHelpClick() {
         _uiState.update { state ->
             state.copy(
                 loginState = state.loginState.copy(
-                    helperText = "Try another sign-in method or recover your account."
+                    helperText = "输入已有账号 ID 可继续登录，留空账号 ID 会自动创建新账号。"
                 )
             )
         }
     }
 
-    /**
-     * 处理账号恢复入口点击。
-     */
     fun onRecoverAccountClick() {
+        val hint = authRepository.accountHint()
+        val helperText = if (hint.userId.isBlank()) {
+            "没有找到上次登录记录，请输入昵称后创建或继续登录。"
+        } else {
+            "已为你预填上次使用的账号信息，可直接继续登录。"
+        }
         _uiState.update { state ->
             state.copy(
                 loginState = state.loginState.copy(
-                    helperText = "Account recovery is not connected yet."
+                    helperText = helperText,
+                    suggestedUserId = hint.userId,
+                    suggestedNickname = hint.nickname
                 )
             )
         }
     }
 
-    /**
-     * 提交登录操作。
-     *
-     * 当前实现是一个前端模拟流程：
-     * 先校验协议勾选状态，再展示加载文案，最后延迟后切到已登录态。
-     *
-     * @param method 本次使用的登录方式。
-     */
-    fun submitLogin(method: LoginMethod) {
+    fun submitLogin(method: LoginMethod, rawUserId: String, rawNickname: String) {
         val currentState = _uiState.value
         if (currentState.loginState.isSubmitting) return
         if (!currentState.loginState.isAgreementChecked) {
@@ -146,12 +109,27 @@ class MyViewModel @Inject constructor(
                     loginState = state.loginState.copy(
                         selectedMethod = method,
                         showAgreementError = true,
-                        helperText = "Accept the agreement before continuing."
+                        helperText = "继续前请先勾选用户协议。"
                     )
                 )
             }
             return
         }
+
+        val nickname = rawNickname.trim()
+        if (nickname.isBlank()) {
+            _uiState.update { state ->
+                state.copy(
+                    loginState = state.loginState.copy(
+                        selectedMethod = method,
+                        helperText = "请输入昵称后再继续。"
+                    )
+                )
+            }
+            return
+        }
+
+        val normalizedUserId = rawUserId.trim().ifBlank { generateUserId(nickname, method) }
 
         viewModelScope.launch {
             _uiState.update { state ->
@@ -160,49 +138,90 @@ class MyViewModel @Inject constructor(
                         isSubmitting = true,
                         selectedMethod = method,
                         helperText = loadingTextFor(method),
-                        showAgreementError = false
+                        showAgreementError = false,
+                        suggestedUserId = normalizedUserId,
+                        suggestedNickname = nickname
                     )
                 )
             }
 
-            // 这里用短暂延迟模拟真实登录请求耗时。
-            delay(900)
-            loadProfile(loggedIn = true, forceRefresh = true)
+            runCatching {
+                authRepository.login(
+                    AuthLoginRequest(
+                        userId = normalizedUserId,
+                        nickname = nickname
+                    )
+                )
+            }.onSuccess {
+                pushRegistrationManager.syncCurrentToken(force = true)
+                loadProfile(loggedIn = true, forceRefresh = true)
+            }.onFailure { error ->
+                AppLogger.e("MyViewModel", "Login failed.", error)
+                _uiState.update { state ->
+                    state.copy(
+                        isLoggedIn = false,
+                        loginState = state.loginState.copy(
+                            isSubmitting = false,
+                            helperText = error.message ?: "登录失败，请稍后重试。"
+                        )
+                    )
+                }
+            }
         }
     }
 
-    /**
-     * 生成某种登录方式对应的帮助文案。
-     */
+    fun logout() {
+        if (!authRepository.isLoggedIn()) return
+        viewModelScope.launch {
+            pushRegistrationManager.unregisterCurrentToken()
+            runCatching { authRepository.logout() }
+                .onFailure { AppLogger.w("MyViewModel", "Logout request failed.", it) }
+            val hint = authRepository.accountHint()
+            _uiState.value = MyUiState(
+                isLoggedIn = false,
+                loginState = _uiState.value.loginState.copy(
+                    isSubmitting = false,
+                    helperText = "已退出登录。",
+                    suggestedUserId = hint.userId,
+                    suggestedNickname = hint.nickname
+                )
+            )
+        }
+    }
+
+    private fun restoreAndLoadProfile(forceRefresh: Boolean) {
+        viewModelScope.launch {
+            val hasSession = runCatching { authRepository.restoreSession() }
+                .onFailure { AppLogger.w("MyViewModel", "Failed to restore session.", it) }
+                .getOrDefault(false)
+            if (hasSession) {
+                pushRegistrationManager.syncCurrentToken()
+            }
+            loadProfile(loggedIn = hasSession, forceRefresh = forceRefresh)
+        }
+    }
+
     private fun helperTextFor(method: LoginMethod): String {
         return when (method) {
-            LoginMethod.WECHAT -> "Use WeChat for a fast sign-in."
-            LoginMethod.APPLE -> "Use Apple for a lightweight registration flow."
-            LoginMethod.PHONE -> "Use your phone number for easier recovery."
-            LoginMethod.QQ -> "Use QQ if that is already your primary account."
+            LoginMethod.WECHAT -> "微信入口已接入真实会话，可用于登录或首登创建账号。"
+            LoginMethod.APPLE -> "Apple 入口复用当前会话接口，首次登录会自动创建账号。"
+            LoginMethod.PHONE -> "输入已有账号 ID 可继续登录，留空则创建新账号。"
+            LoginMethod.QQ -> "QQ 入口同样接入当前后端会话体系。"
         }
     }
 
-    /**
-     * 生成登录提交中的加载文案。
-     */
     private fun loadingTextFor(method: LoginMethod): String {
         return when (method) {
-            LoginMethod.WECHAT -> "Opening WeChat sign-in..."
-            LoginMethod.APPLE -> "Verifying Apple account..."
-            LoginMethod.PHONE -> "Preparing phone verification..."
-            LoginMethod.QQ -> "Opening QQ sign-in..."
+            LoginMethod.WECHAT -> "正在通过微信入口建立会话..."
+            LoginMethod.APPLE -> "正在验证 Apple 入口..."
+            LoginMethod.PHONE -> "正在处理手机号入口..."
+            LoginMethod.QQ -> "正在通过 QQ 入口建立会话..."
         }
     }
 
-    /**
-     * 加载“我的”页数据。
-     *
-     * @param loggedIn 是否按已登录态加载。
-     * @param forceRefresh 是否强制刷新底层数据源。
-     */
-    private fun loadProfile(loggedIn: Boolean = false, forceRefresh: Boolean = false) {
+    private fun loadProfile(loggedIn: Boolean, forceRefresh: Boolean) {
         viewModelScope.launch {
+            val hint = authRepository.accountHint()
             runCatching {
                 loadMyUiState(
                     LoadMyUiStateParams(
@@ -213,23 +232,48 @@ class MyViewModel @Inject constructor(
             }.onSuccess { loaded ->
                 val currentLogin = _uiState.value.loginState
                 _uiState.value = if (loggedIn) {
-                    // 登录成功后直接切到已登录态，由后端/用例返回完整主页数据。
                     loaded.copy(isLoggedIn = true)
                 } else {
-                    // 未登录刷新时保留当前登录面板交互状态，避免界面闪回默认值。
-                    loaded.copy(loginState = currentLogin)
+                    loaded.copy(
+                        loginState = currentLogin.copy(
+                            isSubmitting = false,
+                            suggestedUserId = hint.userId,
+                            suggestedNickname = hint.nickname
+                        )
+                    )
                 }
-            }.onFailure {
-                AppLogger.e("MyViewModel", "Failed to load my page state.", it)
+            }.onFailure { error ->
+                AppLogger.e("MyViewModel", "Failed to load my page state.", error)
                 _uiState.update { state ->
                     state.copy(
+                        isLoggedIn = false,
                         loginState = state.loginState.copy(
                             isSubmitting = false,
-                            helperText = "Failed to load page. Try again later."
+                            suggestedUserId = hint.userId,
+                            suggestedNickname = hint.nickname,
+                            helperText = if (loggedIn) {
+                                "加载个人主页失败，请稍后重试。"
+                            } else {
+                                "会话已恢复，你可以继续登录。"
+                            }
                         )
                     )
                 }
             }
         }
+    }
+
+    private fun generateUserId(nickname: String, method: LoginMethod): String {
+        val normalized = nickname.lowercase()
+            .replace(Regex("[^a-z0-9]+"), "")
+            .take(12)
+            .ifBlank { "user" }
+        val prefix = when (method) {
+            LoginMethod.WECHAT -> "wx"
+            LoginMethod.APPLE -> "apple"
+            LoginMethod.PHONE -> "phone"
+            LoginMethod.QQ -> "qq"
+        }
+        return "${prefix}_${normalized}_${System.currentTimeMillis().toString().takeLast(6)}"
     }
 }

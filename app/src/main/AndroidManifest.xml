@@ -16,6 +16,7 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
@@ -34,39 +35,52 @@
         android:usesCleartextTraffic="true">
 
         <activity
+            android:name=".ui.common.ImagePreviewActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.RedBook" />
+
+        <activity
             android:name=".ui.my.EditProfileActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.RedBook" />
 
         <activity
             android:name=".ui.search.SearchActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.RedBook.Search" />
 
         <activity
             android:name=".ui.note.NoteDetailActivity"
             android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.RedBook" />
 
         <activity
             android:name=".ui.publish.PublishLongFormActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.RedBook" />
 
         <activity
             android:name=".ui.publish.PublishTextActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.RedBook" />
 
         <activity
             android:name=".MainActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.RedBook" />
 
         <activity
             android:name=".SplashActivity"
             android:exported="true"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.RedBook.Splash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -76,10 +90,23 @@
         </activity>
 
         <service
+            android:name=".push.AppFirebaseMessagingService"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <service
             android:name=".service.foreground.NotificationService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="mediaPlayback" />
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
 
         <receiver
             android:name=".broadcast.MyBroadcastReceiver"

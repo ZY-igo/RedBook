@@ -1,0 +1,190 @@
+                if (isPlaying) startProgressUpdates() else stopProgressUpdates()
+            }
+
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                if (videoSize.width <= 0 || videoSize.height <= 0) return
+                lastVideoWidth = videoSize.width
+                lastVideoHeight = videoSize.height
+                configureVideoLayout(lastVideoWidth, lastVideoHeight)
+            }
+
+            override fun onRenderedFirstFrame() {
+                // 首帧真正渲染出来后，就可以安全隐藏封面，避免播放前闪黑�?                hasRenderedFirstFrame = true
+                if (player.isPlaying) {
+                    binding.videoCover.visibility = View.GONE
+                }
+            }
+
+            override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) {
+                savePlaybackSpeed(playbackParameters.speed)
+                updateSpeedButton()
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                // `PlaybackException` 会携�?Media3 归一化错误码，便于按场景给出更明确提示�?                binding.loadingIndicator.visibility = View.GONE
+                binding.playerStatusText.visibility = View.GONE
+                binding.errorContainer.visibility = View.VISIBLE
+                binding.errorText.text = resolvePlaybackErrorMessage(error)
+                pendingNetworkRecovery = !hasActiveNetwork()
+                if (isFullscreen) {
+                    areFullscreenControlsVisible = true
+                    updateFullscreenControlsVisibility()
+                }
+                showPausedCover()
+            }
+        }
+        playerListener = listener
+        player.addListener(listener)
+    }
+
+    /**
+     * 绑定视频页所有显式交互事件�?     *
+     * 这里集中处理点击、重试、倍速、静音、全屏与拖动进度条等交互�?     * 并把视频区域�?PlayerView 的触摸都交给统一的手势识别器，避免两�?View 各自消费事件�?     */
+    private fun bindVideoEvents() {
+        val binding = requireVideoBinding()
+        val gestureDetector = createVideoGestureDetector()
+
+        // 播放按钮和中央覆盖层都走同一套播放切换逻辑，避免两份代码分叉�?        val toggleClickListener = View.OnClickListener { toggleVideoPlayback() }
+        binding.playOverlay.setOnClickListener(toggleClickListener)
+        binding.videoCover.setOnClickListener {
+            if (isFullscreen) {
+                toggleFullscreenControls()
+            } else {
+                toggleVideoPlayback()
+            }
+        }
+        binding.fullscreenButton.setOnClickListener { setFullscreen(!isFullscreen) }
+        binding.muteButton.setOnClickListener { toggleMute() }
+        binding.speedButton.setOnClickListener { cyclePlaybackSpeed() }
+        binding.fullscreenMuteButton.setOnClickListener { toggleMute() }
+        binding.fullscreenSpeedButton.setOnClickListener { cyclePlaybackSpeed() }
+        binding.retryButton.setOnClickListener { retryPlayback() }
+
+        val videoTouchListener = View.OnTouchListener { _, event ->
+            // 所有触摸统一先交�?GestureDetector 做手势识别�?            val handled = gestureDetector.onTouchEvent(event)
+            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                // 手势结束后允许父容器重新拦截，避�?RecyclerView/ScrollView 长期失去触摸权�?                binding.videoHost.parent?.requestDisallowInterceptTouchEvent(false)
+            } else {
+                // 手势处理中临时禁止父容器拦截，保证横�?seek/纵向调节不中途被抢事件�?                binding.videoHost.parent?.requestDisallowInterceptTouchEvent(true)
+            }
+            handled
+        }
+        binding.videoHost.setOnTouchListener(videoTouchListener)
+        binding.detailVideoView.setOnTouchListener(videoTouchListener)
+
+        binding.playbackSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                val player = binding.detailVideoView.player ?: return
+                val duration = player.duration.takeIf { it > 0 } ?: return
+                // 进入拖动态后，页面暂时停止用播放器当前位置覆盖用户手指预览值�?                isSeeking = true
+                val previewPosition = duration * progress / seekBar.max
+                binding.currentPositionText.text = formatDuration(previewPosition)
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar) {
+                isSeeking = true
+            }
+
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                val player = binding.detailVideoView.player ?: return
+                val duration = player.duration.takeIf { it > 0 } ?: return
+                val seekTarget = duration * seekBar.progress / seekBar.max
+                player.seekTo(seekTarget)
+                isSeeking = false
+                updateProgressUi(player)
+            }
+        })
+    }
+
+    /**
+     * 创建视频手势识别器�?     *
+     * 手势策略与常见短视频播放器保持一致：
+     * 1. 单击在全屏时切换控制层，在非全屏时切换播放�?     * 2. 双击直接切换播放状态�?     * 3. 横向滑动控制 seek�?     * 4. 左半屏纵向滑动调亮度，右半屏纵向滑动调音量�?     *
+     * 方法内部通过 touch slop 和首次位移方向锁定横/纵手势，避免一次滑动同时触发两类调节�?     */
+    private fun createVideoGestureDetector(): GestureDetectorCompat {
+        val binding = requireVideoBinding()
+        // touch slop 用来过滤微小抖动，避免轻微位移被误判�?seek 或亮�?音量调节�?        val touchSlop = dpToPx(10).toFloat()
+        var horizontalScrollConsumed = false
+        var verticalScrollConsumed = false
+
+        return GestureDetectorCompat(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean {
+                // 每次手势开始都重置方向锁，并记录“这次手势的起始状态”�?                horizontalScrollConsumed = false
+                verticalScrollConsumed = false
+                gestureSeekBasePositionMs = exoPlayer.currentPosition
+                gestureBrightnessBase = currentScreenBrightness()
+                gestureVolumeBase = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 0
+                return true
+            }
+
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                if (isFullscreen) {
+                    toggleFullscreenControls()
+                } else {
+                    toggleVideoPlayback()
+                }
+                return true
+            }
+
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                toggleVideoPlayback()
+                return true
+            }
+
+            override fun onScroll(
+                e1: MotionEvent?,
+                e2: MotionEvent,
+                distanceX: Float,
+                distanceY: Float
+            ): Boolean {
+                val player = binding.detailVideoView.player ?: return false
+                val duration = player.duration.takeIf { it > 0 } ?: return false
+                val diffX = e2.x - (e1?.x ?: e2.x)
+                val diffY = e2.y - (e1?.y ?: e2.y)
+
+                if (!horizontalScrollConsumed && !verticalScrollConsumed) {
+                    if (abs(diffX) < touchSlop && abs(diffY) < touchSlop) return false
+                    // 首次超过阈值时锁定手势方向，后续本次手势只处理一种语义�?                    horizontalScrollConsumed = abs(diffX) > abs(diffY)
+                    verticalScrollConsumed = !horizontalScrollConsumed
+                    if (horizontalScrollConsumed) {
+                        gestureSeekBasePositionMs = player.currentPosition
+                    }
+                }
+
+                return if (horizontalScrollConsumed) {
+                    val hostWidth = binding.videoHost.width.takeIf { it > 0 } ?: return false
+                    // 水平位移按视频总时长做比例换算�?.9f �?seek 灵敏但不过于激进�?                    val deltaMs = ((diffX / hostWidth) * duration * 0.9f).roundToInt().toLong()
+                    val targetPosition = (gestureSeekBasePositionMs + deltaMs).coerceIn(0L, duration)
+                    player.seekTo(targetPosition)
+                    updateProgressUi(player)
+                    showGestureHint(getString(R.string.note_detail_seek_hint, formatDuration(targetPosition)))
+                    true
+                } else {
+                    if (e1 != null && e1.x < binding.videoHost.width / 2f) {
+                        adjustBrightnessByGesture(diffY)
+                    } else {
+                        adjustVideoVolumeByGesture(diffY)
+                    }
+                    true
+                }
+            }
+        })
+    }
+
+    private fun adjustVideoVolumeByGesture(totalDiffY: Float) {
+        val manager = audioManager ?: return
+        val maxVolume = manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        val hostHeight = requireVideoBinding().videoHost.height.coerceAtLeast(1)
+        // 上滑是减�?y，所以这里取负号，让“上滑增大音量、下滑减小音量”更符合直觉�?        val deltaSteps = ((-totalDiffY / hostHeight) * maxVolume).roundToInt()
+        val nextVolume = (gestureVolumeBase + deltaSteps).coerceIn(0, maxVolume)
+        // `setStreamVolume()` 修改的是系统媒体流音量，不只是当�?ExoPlayer 实例�?        manager.setStreamVolume(AudioManager.STREAM_MUSIC, nextVolume, 0)
+        saveMuteState(nextVolume == 0)
+        exoPlayer.volume = if (nextVolume == 0) 0f else 1f
+        refreshVideoActionLabels()
+        showGestureHint(getString(R.string.note_detail_volume_hint, nextVolume * 100 / maxVolume))
+    }
+
+    private fun adjustBrightnessByGesture(totalDiffY: Float) {
+        val hostHeight = requireVideoBinding().videoHost.height.coerceAtLeast(1)
+        val delta = (-totalDiffY / hostHeight).coerceIn(-1f, 1f)

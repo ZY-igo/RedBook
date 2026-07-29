@@ -54,8 +54,8 @@ import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.LinearSnapHelper
 import androidx.recyclerview.widget.RecyclerView
+import androidx.viewpager2.widget.ViewPager2
 import coil.load
 import com.zhengyang.redbook.R
 import com.zhengyang.redbook.data.remote.RemoteApiConfig
@@ -72,6 +72,7 @@ import com.zhengyang.redbook.databinding.ItemNoteCommentReplyBinding
 import com.zhengyang.redbook.databinding.ItemNoteDetailImageBinding
 import com.zhengyang.redbook.media.MediaItemFactory
 import com.zhengyang.redbook.media.MediaPlayerFactory
+import com.zhengyang.redbook.media.VideoPlaybackManager
 import com.zhengyang.redbook.service.foreground.NotificationService
 import com.zhengyang.redbook.ui.home.HomeCardItem
 import com.zhengyang.redbook.ui.my.MyProfileHeader
@@ -92,6 +93,17 @@ import kotlinx.coroutines.launch
  */
 @AndroidEntryPoint
 class NoteDetailActivity : AppCompatActivity() {
+
+    /*
+     * 阅读这个类时，可以先按下面 4 个模块理解：
+     * 1. 页面入口：`onCreate` 根据 `isVideo` 选择图文布局或视频布局，然后发起远端详情请求。
+     * 2. 数据回填：`applyRemoteNote` 把服务端返回的数据写回页面，同时决定是否刷新播放器或图片分页器。
+     * 3. 视频播放：`setupPlayerIfNeeded`、`attachPlayerListener`、`bindVideoEvents` 负责播放器初始化、状态同步和手势控制。
+     * 4. 评论交互：评论列表本地维护在 `commentItems`，评论弹窗的临时 UI 状态维护在 `CommentDialogState`。
+     *
+     * 也就是说，这个 Activity 既是“页面控制器”，又承担了一部分“临时状态仓库”的角色，
+     * 所以字段会比较多，读起来更适合按场景分块，而不是从上到下一次性硬读。
+     */
 
     /** 图文详情布局绑定对象，仅在图文模式下初始化。 */
     private var imageBinding: ActivityNoteDetailImageBinding? = null
@@ -130,6 +142,15 @@ class NoteDetailActivity : AppCompatActivity() {
     private var shouldResumeAfterNetworkRecovery = false
     /** 页面重新回到前台后是否需要继续播放，用于 onStop/onStart 之间的短暂切换恢复。 */
     private var shouldResumeOnStart = false
+    /**
+     * 是否是“用户主动暂停”。
+     *
+     * 这个标记很关键，它和 `shouldResumeOnStart` / `shouldResumeAfterNetworkRecovery`
+     * 一起决定播放器是否应该自动续播：
+     * 1. 如果只是因为切到后台、页面重建、网络闪断而停止，通常希望恢复后继续播。
+     * 2. 如果是用户自己点了暂停，就不应该擅自自动恢复。
+     */
+    private var isPlaybackManuallyPaused = false
     /** 当前已经完成 prepare 的视频地址，用于避免同一资源被重复 prepare。 */
     private var preparedVideoUrl: String? = null
     /** 手势快进时的基准播放位置。 */
@@ -148,8 +169,10 @@ class NoteDetailActivity : AppCompatActivity() {
         onReplyClick = { comment, replyTo -> showCommentDialog(parentComment = comment, replyToAuthor = replyTo) },
         onReplyToggleClick = ::toggleCommentReplies
     )
-    /** 图片分页吸附辅助器。 */
-    private val imagePagerSnapHelper = LinearSnapHelper()
+    /** 图片分页回调，用于同步指示器和动态高度。 */
+    private var imagePagerCallback: ViewPager2.OnPageChangeCallback? = null
+    /** 已加载图片的宽高比缓存，key 为分页位置，value 为高宽比。 */
+    private val imagePagerAspectRatios = mutableMapOf<Int, Float>()
     /** 可选播放倍速列表。 */
     private val playbackSpeeds = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
     /** 当前评论列表数据。 */
@@ -205,7 +228,10 @@ class NoteDetailActivity : AppCompatActivity() {
     lateinit var remoteApiConfig: RemoteApiConfig
 
     @Inject
-    lateinit var exoPlayer: ExoPlayer
+    lateinit var playbackManager: VideoPlaybackManager
+
+    private val exoPlayer: ExoPlayer
+        get() = playbackManager.player
 
     /** 当前详情页是否为视频模式。 */
     private val isVideo: Boolean by lazy {
@@ -230,8 +256,10 @@ class NoteDetailActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         volumeControlStream = AudioManager.STREAM_MUSIC
+        // `isFullscreen` 的初始值优先取上次保存的状态；如果没有保存过，则根据当前横竖屏推断。
         isFullscreen = savedInstanceState?.getBoolean(STATE_FULLSCREEN)
             ?: resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        // 这里先用 Intent 里的“入口数据”占位，等远端详情加载成功后，再用服务端真实数据覆盖。
         currentNoteId = intent.getStringExtra(EXTRA_NOTE_ID)
         currentAuthorName = intent.getStringExtra(EXTRA_AUTHOR).orEmpty()
         currentNoteTitle = intent.getStringExtra(EXTRA_TITLE).orEmpty()
@@ -254,6 +282,10 @@ class NoteDetailActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         if (isVideo) {
+            if (playbackManager.isBackgroundPlaybackActive()) {
+                playbackManager.exitBackgroundPlayback()
+                NotificationService.dismiss(this)
+            }
             registerNetworkCallbackIfNeeded()
             setupPlayerIfNeeded()
         }
@@ -264,6 +296,7 @@ class NoteDetailActivity : AppCompatActivity() {
      */
     override fun onStop() {
         if (isVideo) {
+            // 先停掉所有 UI 轮询和延迟任务，避免页面不可见后仍然持有 View 引用。
             stopProgressUpdates()
             gestureHideRunnable?.let { runnable ->
                 videoBinding?.gestureHintText?.removeCallbacks(runnable)
@@ -273,9 +306,16 @@ class NoteDetailActivity : AppCompatActivity() {
                 videoBinding?.fullscreenControlsOverlay?.removeCallbacks(runnable)
             }
             fullscreenControlsHideRunnable = null
-            shouldResumeOnStart = exoPlayer.isPlaying
+            // 如果当前正在播放，则切后台时转交前台服务继续播；否则只保存进度并暂停。
+            val shouldContinueInBackground = preparedVideoUrl != null && exoPlayer.isPlaying
+            shouldResumeOnStart =
+                preparedVideoUrl != null && !isPlaybackManuallyPaused && !shouldContinueInBackground
             if (preparedVideoUrl != null) {
-                exoPlayer.pause()
+                if (shouldContinueInBackground) {
+                    startPlaybackService()
+                } else {
+                    exoPlayer.pause()
+                }
                 savePlaybackProgress(
                     videoUrl = currentVideoUrl,
                     positionMs = exoPlayer.currentPosition,
@@ -360,6 +400,10 @@ class NoteDetailActivity : AppCompatActivity() {
             unregisterNetworkCallback()
             releasePlayerIfNeeded()
         }
+        imageBinding?.detailImagePager?.let { pager ->
+            imagePagerCallback?.let(pager::unregisterOnPageChangeCallback)
+        }
+        imagePagerCallback = null
         imageBinding = null
         videoBinding = null
         super.onDestroy()
@@ -647,6 +691,7 @@ class NoteDetailActivity : AppCompatActivity() {
      * @param detail 远端返回的笔记详情 DTO。
      */
     private fun applyRemoteNote(detail: RemoteNoteDetailDto) {
+        // 先统一更新 Activity 级状态字段，后面的 UI 刷新和播放器刷新都依赖这些值。
         currentNoteId = detail.id
         currentAuthorId = detail.author.id
         currentAuthorName = detail.author.name
@@ -661,6 +706,8 @@ class NoteDetailActivity : AppCompatActivity() {
         isNoteCollected = detail.collected
 
         if (isVideo) {
+            // 视频模式下，详情返回的真实视频地址/封面图可能与 Intent 占位值不同，
+            // 所以这里强制重新走一次播放器准备逻辑，保证播放的是服务端返回的最新资源。
             val binding = requireVideoBinding()
             binding.authorName.text = detail.author.name
             binding.avatarText.text = detail.author.avatarText.ifBlank { detail.author.name.take(1) }
@@ -675,6 +722,7 @@ class NoteDetailActivity : AppCompatActivity() {
             refreshVideoActionState(commentCountOverride = detail.commentCount)
             setupPlayerIfNeeded(forcePrepare = true)
         } else {
+            // 图文模式下不涉及播放器，只需要把文字信息、图片列表和评论区摘要刷新到位。
             val binding = requireImageBinding()
             binding.topAuthorName.text = detail.author.name
             binding.topAvatarText.text = detail.author.avatarText.ifBlank { detail.author.name.take(1) }
@@ -1049,6 +1097,8 @@ class NoteDetailActivity : AppCompatActivity() {
         replyToAuthor: String? = null,
         selectedImageUri: String? = null
     ) {
+        // 这里每次都先关闭旧弹窗，只保留一个激活中的评论输入框，
+        // 避免 ActivityResult 回来时不知道该把图片回填到哪个对话框。
         activeCommentDialog?.dismiss()
         val contentView = LayoutInflater.from(this).inflate(R.layout.layout_comment_input_dialog, null)
         val input = contentView.findViewById<EditText>(R.id.commentDialogInput).apply {
@@ -1099,6 +1149,7 @@ class NoteDetailActivity : AppCompatActivity() {
             renderCommentDialogImageState(dialogState)
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val content = input.text?.toString()?.trim().orEmpty()
+                // 允许“纯文字”或“纯图片”，但不能两者都为空。
                 if (content.isBlank() && dialogState.selectedImageUri.isNullOrBlank()) {
                     input.error = "请输入文字或添加图片"
                     return@setOnClickListener
@@ -1143,6 +1194,8 @@ class NoteDetailActivity : AppCompatActivity() {
                     imageUrl = imageUri
                 )
             }.onSuccess { remoteComment ->
+                // 这里没有重新全量拉评论，而是直接把新评论插进本地列表，保持交互更即时。
+                // 一级评论插到 `commentItems` 顶部；回复则插到父评论的 `replies` 顶部。
                 if (parentComment == null) {
                     commentItems.add(0, remoteComment.toUiModel())
                     Toast.makeText(this@NoteDetailActivity, "评论已发布", Toast.LENGTH_SHORT).show()
@@ -1220,27 +1273,32 @@ class NoteDetailActivity : AppCompatActivity() {
      */
     private fun bindImagePager(imageUrls: List<String>) {
         val binding = requireImageBinding()
-        binding.detailImagePager.layoutManager =
-            LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+        // 刷新图片列表时尽量保留用户当前看到的页码，避免远端回填后突然跳回第 0 张。
+        val preservedPosition = currentImagePosition().coerceIn(0, imageUrls.lastIndex.coerceAtLeast(0))
         binding.detailImagePager.adapter = imagePagerAdapter
         imagePagerAdapter.onImageTap = { setImageFullscreen(!isFullscreen) }
-        imagePagerAdapter.isFullscreen = isFullscreen
-        if (binding.detailImagePager.onFlingListener == null) {
-            imagePagerSnapHelper.attachToRecyclerView(binding.detailImagePager)
-        }
-        binding.detailImagePager.clearOnScrollListeners()
-        binding.detailImagePager.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-            override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
-                if (newState == RecyclerView.SCROLL_STATE_IDLE) {
-                    updatePagerHeight()
-                    updatePagerIndicator(currentImagePosition())
+        imagePagerAdapter.onImageMetadataReady = { position, width, height ->
+            if (width > 0 && height > 0) {
+                imagePagerAspectRatios[position] = height.toFloat() / width.toFloat()
+                if (position == currentImagePosition()) {
+                    binding.detailImagePager.post { updatePagerHeight() }
                 }
             }
-        })
+        }
+        imagePagerAdapter.isFullscreen = isFullscreen
+        imagePagerCallback?.let(binding.detailImagePager::unregisterOnPageChangeCallback)
+        imagePagerCallback = object : ViewPager2.OnPageChangeCallback() {
+            override fun onPageSelected(position: Int) {
+                updatePagerIndicator(position)
+                binding.detailImagePager.post { updatePagerHeight() }
+            }
+        }.also(binding.detailImagePager::registerOnPageChangeCallback)
+        imagePagerAspectRatios.clear()
         imagePagerAdapter.submitList(imageUrls)
         binding.detailImagePager.post {
+            binding.detailImagePager.setCurrentItem(preservedPosition, false)
             applyImageModeUi()
-            updatePagerIndicator(0)
+            updatePagerIndicator(preservedPosition)
             updatePagerHeight()
         }
     }
@@ -1250,9 +1308,17 @@ class NoteDetailActivity : AppCompatActivity() {
      */
     private fun updatePagerHeight() {
         val binding = requireImageBinding()
-        val firstChild = binding.detailImagePager.getChildAt(0) ?: return
-        val targetHeight = firstChild.measuredHeight.takeIf { it > 0 } ?: return
+        val pagerWidth = binding.detailImagePager.width.takeIf { it > 0 }
+            ?: binding.mediaContainer.width.takeIf { it > 0 }
+            ?: return
+        val targetHeight = if (isFullscreen) {
+            binding.root.height.takeIf { it > 0 } ?: return
+        } else {
+            val aspectRatio = imagePagerAspectRatios[currentImagePosition()] ?: DEFAULT_IMAGE_PAGER_ASPECT_RATIO
+            (pagerWidth * aspectRatio).roundToInt().coerceAtLeast(dpToPx(180))
+        }
         binding.detailImagePager.layoutParams = binding.detailImagePager.layoutParams.apply {
+            if (height == targetHeight) return
             height = targetHeight
         }
     }
@@ -1290,10 +1356,7 @@ class NoteDetailActivity : AppCompatActivity() {
      * @return 当前可见图片索引。
      */
     private fun currentImagePosition(): Int {
-        val binding = requireImageBinding()
-        val layoutManager = binding.detailImagePager.layoutManager ?: return 0
-        val snapView = imagePagerSnapHelper.findSnapView(layoutManager) ?: return 0
-        return layoutManager.getPosition(snapView).coerceAtLeast(0)
+        return requireImageBinding().detailImagePager.currentItem.coerceAtLeast(0)
     }
 
     /**
@@ -1303,11 +1366,16 @@ class NoteDetailActivity : AppCompatActivity() {
      */
     private fun setImageFullscreen(enabled: Boolean) {
         if (isVideo || isFullscreen == enabled) return
+        val currentPosition = currentImagePosition()
         isFullscreen = enabled
         applyImageModeUi()
         imagePagerAdapter.isFullscreen = enabled
         imagePagerAdapter.notifyDataSetChanged()
-        requireImageBinding().detailImagePager.post { updatePagerHeight() }
+        requireImageBinding().detailImagePager.post {
+            requireImageBinding().detailImagePager.setCurrentItem(currentPosition, false)
+            updatePagerIndicator(currentPosition)
+            updatePagerHeight()
+        }
     }
 
     /**
@@ -1373,6 +1441,7 @@ class NoteDetailActivity : AppCompatActivity() {
         if (videoUrl.isBlank()) return
 
         val binding = requireVideoBinding()
+        // 是否需要真正重新 prepare，取决于视频地址是否变化，或调用方是否显式要求强制重建。
         val needsPrepare = forcePrepare || preparedVideoUrl != videoUrl
         if (needsPrepare) {
             exoPlayer.repeatMode = Player.REPEAT_MODE_OFF
@@ -1384,11 +1453,22 @@ class NoteDetailActivity : AppCompatActivity() {
 
             MediaPlayerFactory.prepare(
                 player = exoPlayer,
-                mediaItem = MediaItemFactory.guessVideo(videoUrl),
+                mediaItem = MediaItemFactory.guessVideo(
+                    url = videoUrl,
+                    title = currentNoteTitle.ifBlank {
+                        getString(R.string.notification_playback_title_fallback)
+                    },
+                    artist = currentAuthorName.ifBlank {
+                        getString(R.string.notification_playback_content)
+                    },
+                    artworkUrl = currentCoverUrl
+                ),
                 playWhenReady = false
             )
 
             val savedPosition = getSavedPlaybackProgress(videoUrl)
+            // `pendingSeekPositionMs` 是为了解决“seek 发生在播放器尚未 READY 之前”的时序问题：
+            // 先记下目标位置，等监听到 `STATE_READY` 时再补一次 seek，避免部分机型上被 prepare 覆盖。
             pendingSeekPositionMs = savedPosition.takeIf { it > 0L } ?: C.TIME_UNSET
             if (savedPosition > 0L) {
                 exoPlayer.seekTo(savedPosition)
@@ -1400,7 +1480,9 @@ class NoteDetailActivity : AppCompatActivity() {
         binding.detailVideoView.onResume()
         exoPlayer.volume = if (isMuted()) 0f else 1f
         exoPlayer.playbackParameters = PlaybackParameters(getSavedPlaybackSpeed())
-        if (shouldResumeOnStart && hasActiveNetwork()) {
+        // 自动播放条件不只看“有没有 prepare”，还要结合“是否用户主动暂停”与“是否是前后台恢复”。
+        val shouldAutoPlay = (preparedVideoUrl != null && !isPlaybackManuallyPaused) || shouldResumeOnStart
+        if (shouldAutoPlay && hasActiveNetwork()) {
             binding.errorContainer.visibility = View.GONE
             exoPlayer.play()
         }
@@ -1429,7 +1511,7 @@ class NoteDetailActivity : AppCompatActivity() {
         playerListener?.let(exoPlayer::removeListener)
         playerListener = null
         videoBinding?.detailVideoView?.player = null
-        exoPlayer.release()
+        playbackManager.releasePlayer()
         preparedVideoUrl = null
         pendingSeekPositionMs = C.TIME_UNSET
         hasRenderedFirstFrame = false
@@ -1483,20 +1565,31 @@ class NoteDetailActivity : AppCompatActivity() {
                             areFullscreenControlsVisible = true
                             updateFullscreenControlsVisibility()
                         }
-                        showPausedCover()
+                        showPlaybackOverlay()
                         updateProgressUi(player)
                     }
                 }
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (isPlaying) {
-                    startPlaybackService()
-                } else {
-                    stopPlaybackService()
+                if (playbackManager.isBackgroundPlaybackActive()) {
+                    NotificationService.refresh(this@NoteDetailActivity)
                 }
                 updatePlaybackUi(player)
                 if (isPlaying) startProgressUpdates() else stopProgressUpdates()
+                updateProgressUi(player)
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int
+            ) {
+                updateProgressUi(player)
+            }
+
+            override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
+                updateProgressUi(player)
             }
 
             override fun onVideoSizeChanged(videoSize: VideoSize) {
@@ -1528,7 +1621,7 @@ class NoteDetailActivity : AppCompatActivity() {
                     areFullscreenControlsVisible = true
                     updateFullscreenControlsVisibility()
                 }
-                showPausedCover()
+                showPlaybackOverlay()
             }
         }
         playerListener = listener
@@ -1578,6 +1671,7 @@ class NoteDetailActivity : AppCompatActivity() {
                 if (!fromUser) return
                 val player = binding.detailVideoView.player ?: return
                 val duration = player.duration.takeIf { it > 0 } ?: return
+                // 拖动过程中只更新预览时间，不频繁 seek，避免连续 seek 造成卡顿。
                 isSeeking = true
                 val previewPosition = duration * progress / seekBar.max
                 binding.currentPositionText.text = formatDuration(previewPosition)
@@ -1651,6 +1745,8 @@ class NoteDetailActivity : AppCompatActivity() {
                 val diffY = e2.y - (e1?.y ?: e2.y)
 
                 if (!horizontalScrollConsumed && !verticalScrollConsumed) {
+                    // 第一次明显位移时就锁定手势方向，后续同一次滑动只做一种调节，
+                    // 否则用户斜着滑一下，可能同时触发亮度和快进，体验会很差。
                     if (abs(diffX) < touchSlop && abs(diffY) < touchSlop) return false
                     horizontalScrollConsumed = abs(diffX) > abs(diffY)
                     verticalScrollConsumed = !horizontalScrollConsumed
@@ -1683,6 +1779,7 @@ class NoteDetailActivity : AppCompatActivity() {
         val manager = audioManager ?: return
         val maxVolume = manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
         val hostHeight = requireVideoBinding().videoHost.height.coerceAtLeast(1)
+        // 用“滑动距离 / 可操作高度”映射出音量步进，这样不同分辨率设备上的手势力度更一致。
         val deltaSteps = ((-totalDiffY / hostHeight) * maxVolume).roundToInt()
         val nextVolume = (gestureVolumeBase + deltaSteps).coerceIn(0, maxVolume)
         manager.setStreamVolume(AudioManager.STREAM_MUSIC, nextVolume, 0)
@@ -1695,6 +1792,7 @@ class NoteDetailActivity : AppCompatActivity() {
     private fun adjustBrightnessByGesture(totalDiffY: Float) {
         val hostHeight = requireVideoBinding().videoHost.height.coerceAtLeast(1)
         val delta = (-totalDiffY / hostHeight).coerceIn(-1f, 1f)
+        // 亮度下限限制在 0.1f，避免用户一滑把屏幕调到几乎看不见。
         val nextBrightness = (gestureBrightnessBase + delta).coerceIn(0.1f, 1f)
         val layoutParams = window.attributes
         layoutParams.screenBrightness = nextBrightness
@@ -1716,6 +1814,7 @@ class NoteDetailActivity : AppCompatActivity() {
         if (preparedVideoUrl == null) {
             setupPlayerIfNeeded()
             if (autoPlay) {
+                isPlaybackManuallyPaused = false
                 requireVideoBinding().detailVideoView.player?.play()
             }
             return
@@ -1723,6 +1822,7 @@ class NoteDetailActivity : AppCompatActivity() {
         hasRenderedFirstFrame = false
         exoPlayer.prepare()
         if (autoPlay) {
+            isPlaybackManuallyPaused = false
             exoPlayer.play()
         } else {
             updatePlaybackUi(exoPlayer)
@@ -1741,11 +1841,12 @@ class NoteDetailActivity : AppCompatActivity() {
         val player = binding.detailVideoView.player ?: return
 
         if (!hasActiveNetwork()) {
+            // 无网时不直接调用 `play()`，而是进入错误态并记录“网络恢复后是否要继续播”。
             pendingNetworkRecovery = true
             shouldResumeAfterNetworkRecovery = true
             binding.errorContainer.visibility = View.VISIBLE
             binding.errorText.text = getString(R.string.note_detail_network_lost)
-            showPausedCover()
+            showPlaybackOverlay()
             return
         }
 
@@ -1755,14 +1856,18 @@ class NoteDetailActivity : AppCompatActivity() {
         }
 
         if (player.isPlaying) {
+            // 用户主动暂停要打标记，后续即使页面重建或网络恢复，也不应该偷偷自动恢复播放。
+            isPlaybackManuallyPaused = true
             shouldResumeAfterNetworkRecovery = false
             player.pause()
             if (isFullscreen) {
                 areFullscreenControlsVisible = true
                 updateFullscreenControlsVisibility()
             }
-            showPausedCover()
+            showPlaybackOverlay()
         } else {
+            isPlaybackManuallyPaused = false
+            // 如果已经播完，再次点击播放时先回到开头，符合用户对“重播”的直觉。
             if (player.playbackState == Player.STATE_ENDED) {
                 player.seekTo(0L)
             }
@@ -1798,10 +1903,13 @@ class NoteDetailActivity : AppCompatActivity() {
         val binding = requireVideoBinding()
         val isPlaying = player.isPlaying
         val isBuffering = player.playbackState == Player.STATE_BUFFERING
+        // 封面图的显隐和“是否在播放”不是一回事，核心判断是首帧是否真正渲染出来。
+        // 否则某些机型上开始播放到出首帧之间，会先露出一块黑底。
         val shouldShowCover = when {
             player.playbackState == Player.STATE_ENDED -> true
+            isBuffering -> !hasRenderedFirstFrame
             isPlaying -> !hasRenderedFirstFrame
-            else -> true
+            else -> !hasRenderedFirstFrame
         }
         binding.playOverlay.visibility = if (isPlaying || isBuffering) View.GONE else View.VISIBLE
         binding.videoCover.visibility = if (shouldShowCover) View.VISIBLE else View.GONE
@@ -1811,10 +1919,9 @@ class NoteDetailActivity : AppCompatActivity() {
         }
     }
 
-    private fun showPausedCover() {
+    private fun showPlaybackOverlay() {
         val binding = requireVideoBinding()
         binding.playOverlay.visibility = View.VISIBLE
-        binding.videoCover.visibility = View.VISIBLE
     }
 
     /**
@@ -1849,6 +1956,8 @@ class NoteDetailActivity : AppCompatActivity() {
         val position = player.currentPosition.coerceIn(0L, duration.takeIf { it > 0 } ?: Long.MAX_VALUE)
         binding.durationText.text = formatDuration(duration)
         if (!isSeeking) {
+            // 当用户正在拖动进度条时，不要用播放器当前位置反向覆盖 UI，
+            // 否则拖动中的预览时间会不断跳动，手感很差。
             binding.currentPositionText.text = formatDuration(position)
             binding.playbackSeekBar.progress =
                 if (duration > 0L) ((position * binding.playbackSeekBar.max) / duration).toInt() else 0
@@ -1942,6 +2051,7 @@ class NoteDetailActivity : AppCompatActivity() {
 
     private fun applyVideoModeUi() {
         val binding = videoBinding ?: return
+        // 普通态展示“详情内容 + 操作栏”，全屏态只保留视频和浮层控制按钮。
         WindowCompat.setDecorFitsSystemWindows(window, !isFullscreen)
         WindowInsetsControllerCompat(window, window.decorView).apply {
             if (isFullscreen) {
@@ -2033,6 +2143,7 @@ class NoteDetailActivity : AppCompatActivity() {
 
     private fun savePlaybackProgress(videoUrl: String, positionMs: Long, durationMs: Long) {
         if (videoUrl.isBlank()) return
+        // 如果已经接近结尾，就按“已播完”处理，保存为 0，避免下次从最后 1~2 秒恢复。
         val safePosition = if (durationMs > 0 && durationMs - positionMs <= 2_000L) 0L else positionMs
         playbackPrefs.edit().putLong(progressKey(videoUrl), safePosition.coerceAtLeast(0L)).apply()
     }
@@ -2101,7 +2212,7 @@ class NoteDetailActivity : AppCompatActivity() {
                             if (videoBinding != null) {
                                 requireVideoBinding().errorContainer.visibility = View.VISIBLE
                                 requireVideoBinding().errorText.text = getString(R.string.note_detail_network_lost)
-                                showPausedCover()
+                                showPlaybackOverlay()
                             }
                         }
                     }
@@ -2128,10 +2239,28 @@ class NoteDetailActivity : AppCompatActivity() {
     }
 
     private fun startPlaybackService() {
+        playbackManager.enterBackgroundPlayback(
+            VideoPlaybackManager.BackgroundPlaybackState(
+                title = currentNoteTitle.ifBlank {
+                    getString(R.string.notification_playback_title_fallback)
+                },
+                author = currentAuthorName.ifBlank {
+                    getString(R.string.notification_playback_content)
+                },
+                artworkUrl = currentCoverUrl.takeIf { it.isNotBlank() },
+                resumeIntent = intent
+            )
+        )
         NotificationService.start(this)
     }
 
+    private fun refreshPlaybackService() {
+        if (!playbackManager.isBackgroundPlaybackActive()) return
+        NotificationService.refresh(this)
+    }
+
     private fun stopPlaybackService() {
+        playbackManager.exitBackgroundPlayback()
         NotificationService.stop(this)
     }
 
@@ -2293,6 +2422,8 @@ class NoteDetailActivity : AppCompatActivity() {
         private const val STATE_FULLSCREEN = "state_fullscreen"
         /** 手势亮度默认值。 */
         private const val DEFAULT_GESTURE_BRIGHTNESS = 0.5f
+        /** 图文分页器在图片尚未返回真实尺寸前使用的默认高宽比。 */
+        private const val DEFAULT_IMAGE_PAGER_ASPECT_RATIO = 1f
         /** 全屏控制层自动隐藏时长。 */
         private const val FULLSCREEN_CONTROLS_AUTO_HIDE_MS = 2_500L
         /** 发布时间显示格式。 */
@@ -2726,6 +2857,8 @@ private class NoteImagePagerAdapter : RecyclerView.Adapter<NoteImagePagerAdapter
     private val items = mutableListOf<String>()
     /** 图片点击回调。 */
     var onImageTap: (() -> Unit)? = null
+    /** 图片加载完成后的尺寸回调。 */
+    var onImageMetadataReady: ((position: Int, width: Int, height: Int) -> Unit)? = null
     /** 当前是否处于全屏图片模式。 */
     var isFullscreen: Boolean = false
 
@@ -2757,9 +2890,11 @@ private class NoteImagePagerAdapter : RecyclerView.Adapter<NoteImagePagerAdapter
      */
     override fun onBindViewHolder(holder: NoteImageViewHolder, position: Int) {
         holder.bind(
+            position = position,
             imageUrl = items[position],
             isFullscreen = isFullscreen,
-            onImageTap = onImageTap
+            onImageTap = onImageTap,
+            onImageMetadataReady = onImageMetadataReady
         )
     }
 
@@ -2780,9 +2915,11 @@ private class NoteImagePagerAdapter : RecyclerView.Adapter<NoteImagePagerAdapter
          * 全屏态切换为完整适配，优先确保用户能看到整张图片。
          */
         fun bind(
+            position: Int,
             imageUrl: String,
             isFullscreen: Boolean,
-            onImageTap: (() -> Unit)?
+            onImageTap: (() -> Unit)?,
+            onImageMetadataReady: ((position: Int, width: Int, height: Int) -> Unit)?
         ) {
             binding.root.setBackgroundColor(if (isFullscreen) Color.BLACK else Color.TRANSPARENT)
             binding.detailPagerImage.scaleType = if (isFullscreen) {
@@ -2792,6 +2929,16 @@ private class NoteImagePagerAdapter : RecyclerView.Adapter<NoteImagePagerAdapter
             }
             binding.detailPagerImage.load(imageUrl) {
                 crossfade(true)
+                listener(
+                    onSuccess = { _, result ->
+                        val drawable = result.drawable
+                        onImageMetadataReady?.invoke(
+                            position,
+                            drawable.intrinsicWidth,
+                            drawable.intrinsicHeight
+                        )
+                    }
+                )
             }
             binding.detailPagerImage.setOnClickListener { onImageTap?.invoke() }
         }

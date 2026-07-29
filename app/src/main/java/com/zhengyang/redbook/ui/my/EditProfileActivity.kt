@@ -9,7 +9,9 @@ import androidx.lifecycle.lifecycleScope
 import coil.load
 import com.zhengyang.redbook.data.repository.MyRepository
 import com.zhengyang.redbook.databinding.ActivityEditProfileBinding
+import com.zhengyang.redbook.ui.common.ImagePreviewActivity
 import com.zhengyang.redbook.utils.AppLogger
+import com.zhengyang.redbook.utils.applyCircleAvatarDefaults
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.launch
@@ -23,38 +25,18 @@ import kotlinx.coroutines.launch
 class EditProfileActivity : AppCompatActivity() {
 
     companion object {
-        /**
-         * 头像加载日志标签。
-         */
         private const val TAG = "EditProfileAvatar"
     }
 
-    /**
-     * 页面 ViewBinding。
-     */
     private lateinit var binding: ActivityEditProfileBinding
 
-    /**
-     * “我的”模块仓库，用于读取资料和上传头像。
-     */
     @Inject
     lateinit var myRepository: MyRepository
 
-    /**
-     * 用户本次新选择的头像 Uri。
-     */
     private var selectedAvatarUri: Uri? = null
-
-    /**
-     * 当前正在编辑的个人资料快照。
-     */
     private var currentProfile: MyProfileHeader? = null
+    private var currentAvatarSource: Any? = null
 
-    /**
-     * 系统图片选择器。
-     *
-     * 选择完成后立即本地预览头像效果。
-     */
     private val avatarPicker =
         registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
             if (uri != null) {
@@ -63,12 +45,6 @@ class EditProfileActivity : AppCompatActivity() {
             }
         }
 
-    /**
-     * 初始化编辑资料页。
-     *
-     * 这里会绑定返回、保存、头像选择事件，
-     * 并在页面首次进入时读取当前用户资料。
-     */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityEditProfileBinding.inflate(layoutInflater)
@@ -77,7 +53,17 @@ class EditProfileActivity : AppCompatActivity() {
         binding.buttonBack.setOnClickListener { finish() }
         binding.buttonPreview.text = "保存"
         binding.buttonPreview.setOnClickListener { saveAvatar() }
-        binding.avatarContainer.setOnClickListener { avatarPicker.launch("image/*") }
+        binding.avatarContainer.setOnClickListener {
+            when (val source = currentAvatarSource) {
+                is Uri -> startActivity(ImagePreviewActivity.createIntent(this, source))
+                is String -> startActivity(ImagePreviewActivity.createIntent(this, source))
+                else -> avatarPicker.launch("image/*")
+            }
+        }
+        binding.avatarContainer.setOnLongClickListener {
+            avatarPicker.launch("image/*")
+            true
+        }
         binding.avatarAction.setOnClickListener { avatarPicker.launch("image/*") }
 
         lifecycleScope.launch {
@@ -92,43 +78,49 @@ class EditProfileActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * 渲染已有个人资料。
-     *
-     * @param profile 当前加载到的资料。
-     */
     private fun renderProfile(profile: MyProfileHeader) {
         binding.avatarText.text = profile.avatarText
         renderAvatar(profile.avatarUrl, profile.avatarText)
     }
 
-    /**
-     * 渲染头像预览。
-     *
-     * @param source 头像来源，可以是远程 URL，也可以是本地 Uri。
-     * @param fallbackText 没有头像图时展示的文字头像内容。
-     */
     private fun renderAvatar(source: Any?, fallbackText: String) {
         AppLogger.d(TAG, "render edit avatar, source=$source")
+        currentAvatarSource = source
         binding.avatarText.text = fallbackText
+        binding.avatarImage.setImageDrawable(null)
         if (source == null) {
-            binding.avatarImage.setImageDrawable(null)
             binding.avatarImage.alpha = 0f
             binding.avatarText.alpha = 1f
             return
         }
 
-        // 有图片源时直接显示图片预览，同时隐藏文字头像。
-        binding.avatarImage.alpha = 1f
-        binding.avatarText.alpha = 0f
-        binding.avatarImage.load(source)
+        binding.avatarImage.load(source) {
+            applyCircleAvatarDefaults()
+            listener(
+                onStart = {
+                    // 编辑头像时先保留文字兜底，避免本地/远程图片切换时闪白。
+                    binding.avatarImage.alpha = 0f
+                    binding.avatarText.alpha = 1f
+                },
+                onSuccess = { _, _ ->
+                    AppLogger.d(TAG, "edit avatar load success, source=$source")
+                    binding.avatarImage.alpha = 1f
+                    binding.avatarText.alpha = 0f
+                },
+                onError = { _, result ->
+                    AppLogger.w(
+                        TAG,
+                        "edit avatar load error, source=$source, message=${result.throwable.message}",
+                        result.throwable
+                    )
+                    binding.avatarImage.setImageDrawable(null)
+                    binding.avatarImage.alpha = 0f
+                    binding.avatarText.alpha = 1f
+                }
+            )
+        }
     }
 
-    /**
-     * 保存当前选择的头像。
-     *
-     * 如果用户没有选择新头像，则直接关闭页面。
-     */
     private fun saveAvatar() {
         val uri = selectedAvatarUri
         if (uri == null) {
@@ -156,12 +148,6 @@ class EditProfileActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * 根据内容类型生成上传文件名。
-     *
-     * @param contentType 图片 MIME 类型。
-     * @return 带后缀的头像文件名。
-     */
     private fun buildAvatarFileName(contentType: String): String {
         val extension = when (contentType.lowercase()) {
             "image/png" -> "png"

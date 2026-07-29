@@ -5,6 +5,7 @@
  */
 package com.zhengyang.redbook.data.remote.interceptor
 
+import java.net.ConnectException
 import java.io.IOException
 import java.util.concurrent.ThreadLocalRandom
 import okhttp3.Interceptor
@@ -43,7 +44,7 @@ class RetryInterceptor(
                 response.close()
             } catch (error: IOException) {
                 lastIOException = error
-                if (attempt == maxRetries) throw error
+                if (!shouldRetry(error, attempt)) throw error
                 sleepBeforeRetry(attempt)
             }
         }
@@ -59,6 +60,17 @@ class RetryInterceptor(
         if (attempt == maxRetries || response.isSuccessful) return false
         if (response.code == TOO_MANY_REQUESTS) return true
         return response.code in RETRYABLE_SERVER_ERROR_RANGE
+    }
+
+    /**
+     * 判断异常是否值得重试。
+     *
+     * 对于连接被拒绝这类“目标端口当前无人监听”的错误，继续重试几乎没有价值，
+     * 直接失败可以更快暴露配置或后端未启动的问题。
+     */
+    private fun shouldRetry(error: IOException, attempt: Int): Boolean {
+        if (attempt == maxRetries) return false
+        return error !is ConnectException
     }
 
     /**

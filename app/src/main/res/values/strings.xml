@@ -168,6 +168,11 @@
     <string name="notification_channel_description">前台同步通知</string>
     <string name="notification_title">正在同步数据</string>
     <string name="notification_content">请稍候，内容同步进行中</string>
+    <string name="push_channel_name">消息通知</string>
+    <string name="push_channel_description">点赞、评论、运营消息等系统通知</string>
+    <string name="push_default_title">小红书新消息</string>
+    <string name="push_default_body">你有一条新通知，点开看看</string>
+    <string name="push_permission_denied">未开启通知权限，系统通知可能不会显示</string>
     <string name="close_symbol">×</string>
     <string name="note_detail_cd_back">返回</string>
     <string name="note_detail_cd_more_actions">更多操作</string>
@@ -199,4 +204,11 @@
     <string name="note_detail_related_with_title">相关搜索：%1$s</string>
     <string name="note_detail_publish_time">发布时间：%1$s</string>
     <string name="note_detail_location">地址：%1$s</string>
+    <string name="notification_playback_channel_name">后台播放</string>
+    <string name="notification_playback_channel_description">视频在后台继续播放时显示的通知</string>
+    <string name="notification_playback_title_fallback">视频继续播放中</string>
+    <string name="notification_playback_content">点按返回视频详情</string>
+    <string name="notification_playback_action_pause">暂停</string>
+    <string name="notification_playback_action_resume">继续</string>
+    <string name="notification_playback_action_close">关闭</string>
 </resources>

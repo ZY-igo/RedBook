@@ -117,10 +117,10 @@
                     android:gravity="center"
                     android:orientation="vertical">
 
-                    <androidx.recyclerview.widget.RecyclerView
+                    <androidx.viewpager2.widget.ViewPager2
                         android:id="@+id/detailImagePager"
                         android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
+                        android:layout_height="240dp"
                         android:nestedScrollingEnabled="false"
                         android:overScrollMode="never" />
 

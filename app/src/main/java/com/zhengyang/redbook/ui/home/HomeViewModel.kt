@@ -9,6 +9,7 @@ import com.zhengyang.redbook.usecase.LoadHomeCategoriesUseCase
 import com.zhengyang.redbook.usecase.LoadHomeFollowingSeedUseCase
 import com.zhengyang.redbook.usecase.LoadHomeDiscoverItemsUseCase
 import com.zhengyang.redbook.usecase.NoParams
+import com.zhengyang.redbook.utils.AppLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -200,6 +201,10 @@ class HomeViewModel @Inject constructor(
                     val categories = result.data
                     val initialCategory = categories.firstOrNull(DiscoverCategoryItem::isDefaultSelected)
                         ?: categories.firstOrNull()
+                    AppLogger.d(
+                        "HomeViewModel",
+                        "Loaded categories. size=${categories.size}, initialCategory=${initialCategory?.id}, ids=${categories.joinToString { it.id }}"
+                    )
 
                     _uiState.update {
                         it.copy(
@@ -215,6 +220,7 @@ class HomeViewModel @Inject constructor(
 
                 is Resource.Error -> {
                     val message = result.throwable.toUserMessage("Failed to load home channels")
+                    AppLogger.e("HomeViewModel", "Failed to load categories: $message", result.throwable)
                     _uiState.update {
                         it.copy(
                             discoverItems = emptyList(),

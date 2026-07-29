@@ -49,6 +49,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!granted) {
+                Toast.makeText(this, R.string.push_permission_denied, Toast.LENGTH_SHORT).show()
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -83,6 +90,7 @@ class MainActivity : AppCompatActivity() {
         binding.centerAddButton.setOnClickListener {
             showPublishOptionsSheet()
         }
+        requestNotificationPermissionIfNeeded()
 
         receiver = MyBroadcastReceiver()
         ContextCompat.registerReceiver(
@@ -166,6 +174,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun hasPermission(permission: String): Boolean {
         return ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (hasPermission(Manifest.permission.POST_NOTIFICATIONS)) return
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     private enum class Page(

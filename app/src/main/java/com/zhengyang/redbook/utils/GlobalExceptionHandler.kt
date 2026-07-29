@@ -6,6 +6,7 @@
 package com.zhengyang.redbook.utils
 
 import android.content.Context
+import android.util.Log
 
 class GlobalExceptionHandler(
     private val appContext: Context,
@@ -28,6 +29,7 @@ class GlobalExceptionHandler(
                 .edit()
                 .putString(KEY_LAST_CRASH_MESSAGE, throwable.message ?: throwable::class.java.simpleName)
                 .putString(KEY_LAST_CRASH_THREAD, thread.name)
+                .putString(KEY_LAST_CRASH_STACKTRACE, Log.getStackTraceString(throwable))
                 .putLong(KEY_LAST_CRASH_AT, System.currentTimeMillis())
                 .commit()
         }.onFailure {
@@ -39,18 +41,22 @@ class GlobalExceptionHandler(
         private const val PREFS_NAME = "global_exception_handler"
         private const val KEY_LAST_CRASH_MESSAGE = "last_crash_message"
         private const val KEY_LAST_CRASH_THREAD = "last_crash_thread"
+        private const val KEY_LAST_CRASH_STACKTRACE = "last_crash_stacktrace"
         private const val KEY_LAST_CRASH_AT = "last_crash_at"
 
         fun consumeLastCrashSummary(context: Context): String? {
             val preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val message = preferences.getString(KEY_LAST_CRASH_MESSAGE, null) ?: return null
             val threadName = preferences.getString(KEY_LAST_CRASH_THREAD, null).orEmpty()
+            val stacktrace = preferences.getString(KEY_LAST_CRASH_STACKTRACE, null).orEmpty()
             preferences.edit()
                 .remove(KEY_LAST_CRASH_MESSAGE)
                 .remove(KEY_LAST_CRASH_THREAD)
+                .remove(KEY_LAST_CRASH_STACKTRACE)
                 .remove(KEY_LAST_CRASH_AT)
                 .apply()
-            return if (threadName.isBlank()) message else "$message ($threadName)"
+            val summary = if (threadName.isBlank()) message else "$message ($threadName)"
+            return if (stacktrace.isBlank()) summary else "$summary\n$stacktrace"
         }
     }
 }

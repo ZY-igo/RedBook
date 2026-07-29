@@ -38,15 +38,21 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.StaggeredGridLayoutManager
 import coil.ImageLoader
+import coil.request.ImageRequest
 import com.google.android.material.snackbar.Snackbar
 import com.zhengyang.redbook.R
 import com.zhengyang.redbook.databinding.FragmentHomeBinding
+import com.zhengyang.redbook.media.MediaPlayerFactory
 import com.zhengyang.redbook.ui.note.NoteDetailActivity
 import com.zhengyang.redbook.ui.search.SearchActivity
 import com.zhengyang.redbook.utils.AppLogger
+import com.zhengyang.redbook.utils.applyPreloadDefaults
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
@@ -71,6 +77,9 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     @Inject
     /** 由 Hilt 注入的图片加载器，供首页卡片封面、头像等图片统一复用。 */
     lateinit var imageLoader: ImageLoader
+
+    @Inject
+    lateinit var okHttpClient: OkHttpClient
 
     /** 发现流主列表适配器。 */
     private lateinit var adapter: HomeAdapter
@@ -104,6 +113,20 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     private var isDiscoverTransitionAnimating = false
     /** 当前一次发现流横向切换过程的上下文信息；为空表示未在切换中。 */
     private var activeDiscoverSwipe: DiscoverSwipeSession? = null
+    /** 发现流主列表复用的普通两列网格布局管理器。 */
+    private var discoverGridLayoutManager: GridLayoutManager? = null
+    /** 发现流主列表复用的瀑布流布局管理器。 */
+    private var discoverWaterfallLayoutManager: StaggeredGridLayoutManager? = null
+    /** 切分类预览层复用的普通两列网格布局管理器。 */
+    private var previewGridLayoutManager: GridLayoutManager? = null
+    /** 切分类预览层复用的稳定瀑布流布局管理器。 */
+    private var previewWaterfallLayoutManager: StaggeredGridLayoutManager? = null
+    private var discoverLastPreloadedEnd = RecyclerView.NO_POSITION
+    private var followingLastPreloadedEnd = RecyclerView.NO_POSITION
+    private var discoverPreloadSignature: String? = null
+    private var followingPreloadSignature: String? = null
+    private var feedVideoPreloadJob: Job? = null
+    private var feedVideoPreloadSignature: String? = null
 
     /**
      * 在 Fragment 的根视图创建完成后初始化首页。
@@ -174,7 +197,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         }
         // 点击搜索按钮时跳转搜索页。
         binding.buttonSearch.setOnClickListener {
-            startActivity(Intent(requireContext(), SearchActivity::class.java))
+            startActivity(SearchActivity.createIntent(requireContext()))
         }
 
         // 根据默认 tab 渲染首屏内容。
@@ -256,6 +279,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
      * @param tab 当前需要展示的顶部页签。
      */
     private fun renderTopTab(tab: TopTab) {
+        AppLogger.d("HomeFragment", "renderTopTab tab=$tab, currentCategory=${channelCoordinator.currentCategory?.id}")
         // 保存当前 tab 状态，供后续滚动、分类过滤等逻辑判断。
         currentTopTab = tab
         // 更新三个 tab 的选中态，驱动文字/样式变化。
@@ -283,6 +307,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
             else -> channelCoordinator.currentCategory
         }
         // 找到目标分类后立即渲染，确保列表布局与选中态同步。
+        AppLogger.d("HomeFragment", "renderTopTab targetCategory=${targetCategory?.id}")
         targetCategory?.let(::renderCategory)
     }
 
@@ -412,6 +437,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         adapter.onItemClick = { item ->
             startActivity(NoteDetailActivity.createIntent(requireContext(), item))
         }
+        adapter.onVideoPreloadRequest = ::handleFeedVideoPreloadRequest
         // 发现流列表由内容适配器 + 底部状态适配器拼接而成。
         binding.recyclerView.adapter = ConcatAdapter(adapter, discoverFooterAdapter)
         // 首页卡片高度可能变化，不固定尺寸。
@@ -427,6 +453,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         previewAdapter.onItemClick = { item ->
             startActivity(NoteDetailActivity.createIntent(requireContext(), item))
         }
+        previewAdapter.onVideoPreloadRequest = ::handleFeedVideoPreloadRequest
         // 预览层只显示切换目标分类的内容，不拼接 footer。
         binding.discoverSwipePreviewRecyclerView.adapter = previewAdapter
         binding.discoverSwipePreviewRecyclerView.setHasFixedSize(false)
@@ -439,6 +466,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         followingAdapter.onItemClick = { item ->
             startActivity(NoteDetailActivity.createIntent(requireContext(), item))
         }
+        followingAdapter.onVideoPreloadRequest = ::handleFeedVideoPreloadRequest
         // 关注流同样拼接一个 footer 展示加载状态。
         binding.followingRecyclerView.adapter = ConcatAdapter(followingAdapter, followingFooterAdapter)
         binding.followingRecyclerView.setHasFixedSize(false)
@@ -454,6 +482,53 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
 
         // 最后注册发现流的横向切分类手势。
         setupDiscoverSwipeNavigation()
+    }
+
+    /**
+     * 统一处理 Feed 列表发起的视频预加载请求。
+     *
+     * Adapter 只负责告诉外层“当前窗口后面的哪些视频值得预热”，
+     * 这里再统一做网络策略、去重、任务取消与媒体层调用。
+     */
+    private fun handleFeedVideoPreloadRequest(urls: List<String>) {
+        if (!FEED_VIDEO_PRELOAD_CONFIG.enabled) return
+        if (!hasActiveNetwork()) return
+        if (FEED_VIDEO_PRELOAD_CONFIG.onlyOnWifi && !isOnUnmeteredNetwork()) return
+        if (FEED_VIDEO_PRELOAD_CONFIG.respectDataSaver && isDataSaverEnabled()) return
+
+        val normalizedUrls = urls.asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+            .take(FEED_VIDEO_PRELOAD_CONFIG.preloadCount)
+            .toList()
+        if (normalizedUrls.isEmpty()) return
+
+        val signature = normalizedUrls.joinToString(separator = "|")
+        if (feedVideoPreloadSignature == signature && feedVideoPreloadJob?.isActive == true) {
+            return
+        }
+
+        feedVideoPreloadSignature = signature
+        feedVideoPreloadJob?.cancel()
+        feedVideoPreloadJob = viewLifecycleOwner.lifecycleScope.launch {
+            runCatching {
+                MediaPlayerFactory.preload(
+                    context = requireContext(),
+                    urls = normalizedUrls,
+                    okHttpClient = okHttpClient,
+                    config = MediaPlayerFactory.VideoPreloadConfig(
+                        enabled = FEED_VIDEO_PRELOAD_CONFIG.enabled,
+                        preloadCount = FEED_VIDEO_PRELOAD_CONFIG.preloadCount,
+                        bytesPerVideo = FEED_VIDEO_PRELOAD_CONFIG.bytesPerVideo,
+                        maxCacheBytes = FEED_VIDEO_PRELOAD_CONFIG.maxCacheForPreloadBytes,
+                        perItemTimeoutMs = FEED_VIDEO_PRELOAD_CONFIG.perItemTimeoutMs
+                    )
+                )
+            }.onFailure { error ->
+                AppLogger.w("HomeFragment", "Feed video preload failed.", error)
+            }
+        }
     }
 
     /** 为发现流和关注流注册分页加载监听。 */
@@ -657,7 +732,10 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         // 刷新频道管理面板选中态。
         renderChannelManager()
         // 根据分类决定发现流使用普通网格还是瀑布流布局。
-        binding.recyclerView.layoutManager = createLayoutManager(category)
+        val targetLayoutManager = obtainDiscoverLayoutManager(category)
+        if (binding.recyclerView.layoutManager !== targetLayoutManager) {
+            binding.recyclerView.layoutManager = targetLayoutManager
+        }
     }
 
     /** 判断当前条件下是否允许用横向手势切换发现流分类。 */
@@ -697,6 +775,9 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
             toNext = toNext,
             width = contentWidth.toFloat()
         )
+        // 横向跟手拖拽期间先冻结主列表瀑布流的 gap handling，
+        // 避免 `MOVE_ITEMS_BETWEEN_SPANS` 在拖拽过程中因为高度变化而频繁跨列搬运 item。
+        updateDiscoverSwipeGapHandling(freeze = true)
         // 标记动画中，防止并发开启第二次切换。
         isDiscoverTransitionAnimating = true
         // 停止主列表与预览列表当前可能存在的惯性滚动。
@@ -763,11 +844,24 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
             if (remainingAnimations == 0) {
                 // 如果用户确认切换，则在动画结束后真正提交分类切换。
                 if (commit) {
+                    // 关键点：预览层当前看到的内容，必须先真正提交到主列表，
+                    // 并等 Diff 应用完成后，才能把预览层拿掉。
+                    //
+                    // 否则预览层一隐藏，下面露出来的还是旧分类列表，
+                    // 用户就会看到“先是旧瀑布流 -> 再闪成新瀑布流”的问题。
+                    val promotedItems = previewAdapter.currentList.toList()
                     applySelectedCategory(session.targetCategory)
-                    viewModel.selectDiscoverCategory(session.targetCategory)
+                    adapter.submitList(promotedItems) {
+                        // 主列表已经接管了目标分类的可见内容，此时再收起预览层才不会穿帮。
+                        clearDiscoverSwipeState(shouldRenderLatestState = false)
+                        // 最后再通知 ViewModel 切分类并刷新真实数据。
+                        // 这样后续只会发生“预览内容 -> 新鲜内容”的更新，不会先露出旧分类。
+                        viewModel.selectDiscoverCategory(session.targetCategory)
+                    }
+                } else {
+                    // 取消切换时不涉及主列表接管预览内容，可以直接恢复现场。
+                    clearDiscoverSwipeState(shouldRenderLatestState = true)
                 }
-                // 无论提交还是取消，都要恢复临时状态。
-                clearDiscoverSwipeState()
             }
         }
 
@@ -792,7 +886,11 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     /** 为目标分类绑定切换预览内容，优先使用缓存，否则退回骨架屏。 */
     private fun bindDiscoverSwipePreview(category: DiscoverCategoryItem) {
         // 预览列表的布局类型要和目标分类一致，避免切换时布局突变。
-        binding.discoverSwipePreviewRecyclerView.layoutManager = createLayoutManager(category)
+        // 但预览层的目标是“平滑跟手”，因此瀑布流场景优先选择稳定模式，禁用自动补洞搬运。
+        val targetLayoutManager = obtainPreviewLayoutManager(category)
+        if (binding.discoverSwipePreviewRecyclerView.layoutManager !== targetLayoutManager) {
+            binding.discoverSwipePreviewRecyclerView.layoutManager = targetLayoutManager
+        }
         // 如果目标分类已有缓存数据，直接展示；否则用骨架屏占位。
         previewAdapter.submitList(viewModel.peekDiscoverItems(category.id) ?: HomeSkeletonFactory.discover())
     }
@@ -828,7 +926,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     }
 
     /** 清理横向切换相关动画状态，并恢复发现流正常显示。 */
-    private fun clearDiscoverSwipeState() {
+    private fun clearDiscoverSwipeState(shouldRenderLatestState: Boolean = true) {
         // 取消并清空主内容视图的平移状态。
         discoverSwipeAnimatedViews().forEach { view ->
             view.animate().cancel()
@@ -839,13 +937,36 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         binding.discoverSwipePreviewContainer.translationX = 0f
         // 隐藏预览层。
         binding.discoverSwipePreviewContainer.visibility = View.GONE
-        // 清空预览列表，避免旧数据残留。
-        previewAdapter.submitList(emptyList())
         // 结束本次切换会话。
         activeDiscoverSwipe = null
         isDiscoverTransitionAnimating = false
-        // 重新用最新状态渲染发现流，确保主列表内容与 footer/空态完全正确。
-        renderDiscoverState(viewModel.uiState.value)
+        // 拖拽结束后恢复主列表默认的 gap handling，回到普通纵向浏览策略。
+        updateDiscoverSwipeGapHandling(freeze = false)
+        // 取消切换时，拖拽期间可能跳过了一些状态流渲染，因此这里补一次最新状态。
+        if (shouldRenderLatestState) {
+            renderDiscoverState(viewModel.uiState.value)
+        }
+    }
+
+    /**
+     * 在横向切分类过程中临时冻结/恢复主列表瀑布流的 gap handling。
+     *
+     * `GAP_HANDLING_MOVE_ITEMS_BETWEEN_SPANS` 在普通纵向滚动时有利于减少“洞口”，
+     * 但在横向拖拽预览时，如果卡片高度还在因为图片加载而变化，就容易触发 item
+     * 被来回搬到左右两列，视觉上表现为高频左右抖动。
+     */
+    private fun updateDiscoverSwipeGapHandling(freeze: Boolean) {
+        val staggeredLayoutManager =
+            binding.recyclerView.layoutManager as? StaggeredGridLayoutManager ?: return
+        val targetStrategy = if (freeze) {
+            StaggeredGridLayoutManager.GAP_HANDLING_NONE
+        } else {
+            StaggeredGridLayoutManager.GAP_HANDLING_MOVE_ITEMS_BETWEEN_SPANS
+        }
+        if (staggeredLayoutManager.gapStrategy == targetStrategy) return
+        staggeredLayoutManager.gapStrategy = targetStrategy
+        // 策略切换后主动重算 span 归属，避免旧布局状态残留。
+        staggeredLayoutManager.invalidateSpanAssignments()
     }
 
     /**
@@ -927,6 +1048,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
      * 如果当前还没有建立发现流初始选中状态，会在这里补发首次选择请求。
      */
     private fun syncCategories(categories: List<DiscoverCategoryItem>) {
+        AppLogger.d("HomeFragment", "syncCategories incoming size=${categories.size}, ids=${categories.joinToString { it.id }}")
         // 记录同步前的当前分类 id，用于判断本次是否发生了分类切换。
         val previousCategoryId = channelCoordinator.currentCategory?.id
         // 把最新分类集合交给协调器统一管理。
@@ -1222,18 +1344,41 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     }
 
     /** 根据分类配置选择普通网格或瀑布流布局。 */
-    private fun createLayoutManager(category: DiscoverCategoryItem): RecyclerView.LayoutManager {
-        // 某些分类需要瀑布流卡片效果，其余分类使用普通两列网格。
+    private fun obtainDiscoverLayoutManager(category: DiscoverCategoryItem): RecyclerView.LayoutManager {
+        // 发现流主列表使用“普通网格 / 默认瀑布流”两套长期复用的 LayoutManager，
+        // 避免切分类时每次 new 一个实例导致整列表重新 layout 和闪动。
         return if (category.usesWaterfall) {
-            StaggeredGridLayoutManager(2, StaggeredGridLayoutManager.VERTICAL).apply {
-                // 允许瀑布流在出现空隙时自动调整 item 跨列位置。
+            discoverWaterfallLayoutManager ?: StaggeredGridLayoutManager(
+                2,
+                StaggeredGridLayoutManager.VERTICAL
+            ).apply {
                 gapStrategy = StaggeredGridLayoutManager.GAP_HANDLING_MOVE_ITEMS_BETWEEN_SPANS
+                discoverWaterfallLayoutManager = this
             }
         } else {
-            createGridLayoutManager(
+            discoverGridLayoutManager ?: createGridLayoutManager(
                 spanCount = 2,
                 adapterProvider = { binding.recyclerView.adapter }
-            )
+            ).also { discoverGridLayoutManager = it }
+        }
+    }
+
+    private fun obtainPreviewLayoutManager(category: DiscoverCategoryItem): RecyclerView.LayoutManager {
+        // 预览层同样复用 LayoutManager，但瀑布流固定使用稳定模式，
+        // 优先保证跟手平滑，不在预览层做自动补洞搬运。
+        return if (category.usesWaterfall) {
+            previewWaterfallLayoutManager ?: StaggeredGridLayoutManager(
+                2,
+                StaggeredGridLayoutManager.VERTICAL
+            ).apply {
+                gapStrategy = StaggeredGridLayoutManager.GAP_HANDLING_NONE
+                previewWaterfallLayoutManager = this
+            }
+        } else {
+            previewGridLayoutManager ?: createGridLayoutManager(
+                spanCount = 2,
+                adapterProvider = { binding.discoverSwipePreviewRecyclerView.adapter }
+            ).also { previewGridLayoutManager = it }
         }
     }
 
@@ -1290,6 +1435,8 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     override fun onStop() {
         // 页面离开前先注销网络监听，避免后台继续收到回调。
         unregisterNetworkCallback()
+        feedVideoPreloadJob?.cancel()
+        feedVideoPreloadJob = null
         super.onStop()
     }
 
@@ -1435,6 +1582,9 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         // 页面销毁时关闭可能还在显示的网络提示。
         networkSnackbar?.dismiss()
         networkSnackbar = null
+        feedVideoPreloadJob?.cancel()
+        feedVideoPreloadJob = null
+        feedVideoPreloadSignature = null
         // 清理发现流横向切换过程中的临时状态。
         clearDiscoverSwipeState()
         // 解除 RecyclerView 与 Adapter 的绑定，帮助旧 View 树被及时回收。
@@ -1447,6 +1597,26 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         // 置空 binding，标记 View 生命周期结束。
         _binding = null
         super.onDestroyView()
+    }
+
+    private fun hasActiveNetwork(): Boolean {
+        val connectivityManager = context?.getSystemService(ConnectivityManager::class.java) ?: return false
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    private fun isOnUnmeteredNetwork(): Boolean {
+        val connectivityManager = context?.getSystemService(ConnectivityManager::class.java) ?: return false
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+    }
+
+    private fun isDataSaverEnabled(): Boolean {
+        val connectivityManager = context?.getSystemService(ConnectivityManager::class.java) ?: return false
+        return connectivityManager.restrictBackgroundStatus ==
+            ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED
     }
 
     private data class DrawerRowModel(
@@ -1479,6 +1649,16 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         val width: Float
     )
 
+    private data class FeedVideoPreloadPolicy(
+        val enabled: Boolean,
+        val onlyOnWifi: Boolean,
+        val preloadCount: Int,
+        val maxCacheForPreloadBytes: Long,
+        val respectDataSaver: Boolean,
+        val bytesPerVideo: Long,
+        val perItemTimeoutMs: Long
+    )
+
     private companion object {
         /** “推荐”频道的固定 id，在“附近”tab 下会被过滤掉。 */
         private const val RECOMMEND_CHANNEL_ID = "recommend"
@@ -1496,5 +1676,14 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         private const val TOP_BAR_HIDE_DURATION = 180L
         /** 顶部分类区显示时回弹插值器的张力参数。 */
         private const val TOP_BAR_OVERSHOOT_TENSION = 0.72f
+        private val FEED_VIDEO_PRELOAD_CONFIG = FeedVideoPreloadPolicy(
+            enabled = true,
+            onlyOnWifi = true,
+            preloadCount = 2,
+            maxCacheForPreloadBytes = 100L * 1024L * 1024L,
+            respectDataSaver = true,
+            bytesPerVideo = 2L * 1024L * 1024L,
+            perItemTimeoutMs = 4_000L
+        )
     }
 }

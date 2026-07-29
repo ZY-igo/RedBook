@@ -4,6 +4,7 @@ import com.zhengyang.redbook.core.common.Resource
 import com.zhengyang.redbook.core.common.toUserMessage
 import com.zhengyang.redbook.usecase.LoadHomeDiscoverItemsParams
 import com.zhengyang.redbook.usecase.LoadHomeDiscoverItemsUseCase
+import com.zhengyang.redbook.utils.AppLogger
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -60,6 +61,7 @@ class HomeDiscoverCoordinator(
      * @param category 当前选中的分类。
      */
     suspend fun selectCategory(category: DiscoverCategoryItem) {
+        AppLogger.d("HomeDiscover", "selectCategory id=${category.id}, title=${category.title}")
         currentCategoryId = category.id
         val cachedItems = discoverCache[category.id]
         discoverOffset.set(cachedItems?.size ?: 0)
@@ -143,6 +145,10 @@ class HomeDiscoverCoordinator(
      * @param forceRefresh 是否强制刷新底层数据源。
      */
     private suspend fun refreshInternal(category: DiscoverCategoryItem, forceRefresh: Boolean) {
+        AppLogger.d(
+            "HomeDiscover",
+            "refreshInternal id=${category.id}, forceRefresh=$forceRefresh, cached=${discoverCache[category.id]?.size ?: 0}"
+        )
         currentCategoryId = category.id
         discoverOffset.set(0)
         val requestVersion = discoverRequestVersion.incrementAndGet()
@@ -168,6 +174,7 @@ class HomeDiscoverCoordinator(
             is Resource.Success -> {
                 if (requestVersion != discoverRequestVersion.get()) return
                 val items = result.data
+                AppLogger.d("HomeDiscover", "refresh success id=${category.id}, itemCount=${items.size}")
                 discoverCache[category.id] = items
                 discoverOffset.set(items.size)
                 uiState.update { state ->
@@ -183,6 +190,7 @@ class HomeDiscoverCoordinator(
             is Resource.Error -> {
                 if (requestVersion != discoverRequestVersion.get()) return
                 val message = result.throwable.toUserMessage("Failed to load discover feed")
+                AppLogger.e("HomeDiscover", "refresh error id=${category.id}: $message", result.throwable)
                 val cachedItems = discoverCache[category.id]
                     ?: uiState.value.discoverItems.filterNot(HomeCardItem::isSkeleton)
                 uiState.update { state ->

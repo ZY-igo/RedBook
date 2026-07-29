@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "820835895502",
+    "project_id": "redpad-37248",
+    "storage_bucket": "redpad-37248.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:820835895502:android:624d25c49bf0db2939e89f",
+        "android_client_info": {
+          "package_name": "com.zhengyang.redbook"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC4lufqMAI5jY_xohFD70Xbmt8zzS22Dj4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

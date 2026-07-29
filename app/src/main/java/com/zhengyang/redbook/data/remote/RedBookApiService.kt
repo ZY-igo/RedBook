@@ -19,6 +19,8 @@ import com.zhengyang.redbook.data.remote.model.RemoteMessageOverviewDto
 import com.zhengyang.redbook.data.remote.model.RemoteMyInterestPersonDto
 import com.zhengyang.redbook.data.remote.model.RemoteMyProfileDto
 import com.zhengyang.redbook.data.remote.model.RemoteNoteDetailDto
+import com.zhengyang.redbook.data.remote.model.RemotePushTestRequestDto
+import com.zhengyang.redbook.data.remote.model.RemotePushTokenRegistrationRequestDto
 import com.zhengyang.redbook.data.remote.model.RemoteSaveDraftRequestDto
 import com.zhengyang.redbook.data.remote.model.RemoteSearchBootstrapDto
 import com.zhengyang.redbook.data.remote.model.RemoteSearchGuessDto
@@ -262,4 +264,19 @@ interface RedBookApiService {
     suspend fun saveDraft(
         @Body request: RemoteSaveDraftRequestDto
     ): ApiResponseDto<RemoteDraftDto>
+
+    @POST("api/v1/push/device-token")
+    suspend fun registerPushToken(
+        @Body request: RemotePushTokenRegistrationRequestDto
+    ): ApiResponseDto<Map<String, Any?>>
+
+    @POST("api/v1/push/device-token/unregister")
+    suspend fun unregisterPushToken(
+        @Body request: RemotePushTokenRegistrationRequestDto
+    ): ApiResponseDto<Map<String, Any?>>
+
+    @POST("api/v1/push/test")
+    suspend fun sendPushTest(
+        @Body request: RemotePushTestRequestDto
+    ): ApiResponseDto<Map<String, Any?>>
 }

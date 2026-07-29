@@ -6,7 +6,12 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt.android)
+    id("com.google.gms.google-services")
 }
+
+val configuredBaseApiUrl = providers.gradleProperty("baseApiUrl")
+    .orElse(providers.environmentVariable("BASE_API_URL"))
+    .getOrElse("http://10.0.2.2:8080/")
 
 android {
     namespace = "com.zhengyang.redbook"
@@ -22,7 +27,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
-        buildConfigField("String", "BASE_API_URL", "\"http://10.0.2.2:8080/\"")
+        buildConfigField("String", "BASE_API_URL", "\"$configuredBaseApiUrl\"")
         buildConfigField("int", "API_CONNECT_TIMEOUT_SECONDS", "15")
         buildConfigField("int", "API_READ_TIMEOUT_SECONDS", "15")
         buildConfigField("int", "API_WRITE_TIMEOUT_SECONDS", "15")
@@ -73,6 +78,7 @@ dependencies {
     implementation(libs.androidx.activity.ktx)
     implementation(libs.androidx.fragment.ktx)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(platform(libs.okhttp.bom))
     implementation(libs.okhttp)
@@ -84,11 +90,16 @@ dependencies {
     implementation(libs.androidx.fragment)
     implementation(libs.androidx.swiperefreshlayout)
     implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.datasource)
     implementation(libs.androidx.media3.datasource.okhttp)
     implementation(libs.androidx.media3.database)
     implementation(libs.coil)
+    implementation(libs.firebase.messaging)
+    implementation(libs.photo.view) {
+        exclude(group = "com.android.support")
+    }
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 

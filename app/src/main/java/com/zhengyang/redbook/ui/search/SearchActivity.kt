@@ -1,6 +1,7 @@
 package com.zhengyang.redbook.ui.search
 
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Typeface
@@ -66,6 +67,7 @@ class SearchActivity : AppCompatActivity() {
         applySystemBarInsets()
         setupInteractions()
         collectUiState()
+        consumeInitialQuery()
     }
 
     private fun applySystemBarInsets() {
@@ -365,4 +367,23 @@ class SearchActivity : AppCompatActivity() {
     private fun color(colorRes: Int): Int = ContextCompat.getColor(this, colorRes)
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun consumeInitialQuery() {
+        val initialQuery = intent?.getStringExtra(EXTRA_INITIAL_QUERY)?.trim().orEmpty()
+        if (initialQuery.isNotEmpty()) {
+            submitQuery(initialQuery)
+        }
+    }
+
+    companion object {
+        private const val EXTRA_INITIAL_QUERY = "extra_initial_query"
+
+        fun createIntent(context: Context, initialQuery: String? = null): Intent {
+            return Intent(context, SearchActivity::class.java).apply {
+                if (!initialQuery.isNullOrBlank()) {
+                    putExtra(EXTRA_INITIAL_QUERY, initialQuery)
+                }
+            }
+        }
+    }
 }

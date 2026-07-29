@@ -5,6 +5,11 @@
  */
 package com.zhengyang.redbook.data.remote.model
 
+import com.zhengyang.redbook.data.auth.AuthSession
+import java.math.BigDecimal
+import java.math.RoundingMode
+import java.time.Instant
+
 /**
  * 通用接口响应壳。
  *
@@ -84,6 +89,7 @@ data class RemoteFollowingSeedDto(
     val followingFeedItems: PageResponseDto<RemoteFeedItemDto>
 )
 
+
 /** 消息页列表行 DTO。 */
 data class RemoteMessageRowDto(
     val id: String,
@@ -135,6 +141,40 @@ data class RemoteMyInterestPersonDto(
     val fansText: String,
     val avatarBackgroundKey: String,
     val followed: Boolean = false
+)
+
+data class RemoteAuthSessionDto(
+    val userId: String,
+    val nickname: String,
+    val token: String,
+    val expiresAt: Any,
+    val refreshToken: String,
+    val refreshExpiresAt: Any
+)
+
+data class RemoteMockLoginRequestDto(
+    val userId: String,
+    val nickname: String
+)
+
+data class RemoteRefreshTokenRequestDto(
+    val refreshToken: String
+)
+
+data class RemoteLogoutRequestDto(
+    val refreshToken: String?
+)
+
+data class RemotePushTokenRegistrationRequestDto(
+    val token: String,
+    val platform: String,
+    val deviceId: String? = null
+)
+
+data class RemotePushTestRequestDto(
+    val title: String,
+    val body: String,
+    val route: String? = null
 )
 
 /** 搜索页启动数据 DTO，包含历史记录和猜词列表。 */
@@ -312,3 +352,43 @@ data class RemoteSaveDraftRequestDto(
     val tags: List<String> = emptyList(),
     val autoSaved: Boolean
 )
+
+fun RemoteAuthSessionDto.toDomain(): AuthSession {
+    return AuthSession(
+        userId = userId,
+        nickname = nickname,
+        accessToken = token,
+        accessExpiresAt = expiresAt.toRemoteInstant(),
+        refreshToken = refreshToken,
+        refreshExpiresAt = refreshExpiresAt.toRemoteInstant()
+    )
+}
+
+private fun Any.toRemoteInstant(): Instant {
+    return when (this) {
+        is String -> parseStringInstant(this)
+        is Number -> parseEpochInstant(toString())
+        else -> throw IllegalArgumentException("Unsupported instant value type: ${this::class.java.simpleName}")
+    }
+}
+
+private fun parseStringInstant(value: String): Instant {
+    val normalized = value.trim()
+    if (normalized.isBlank()) {
+        throw IllegalArgumentException("Instant value is blank.")
+    }
+    return runCatching { Instant.parse(normalized) }
+        .getOrElse { parseEpochInstant(normalized) }
+}
+
+private fun parseEpochInstant(value: String): Instant {
+    val decimal = value.toBigDecimalOrNull()
+        ?: throw IllegalArgumentException("Invalid epoch instant value: $value")
+    val seconds = decimal.setScale(0, RoundingMode.DOWN).longValueExact()
+    val nanos = decimal.subtract(BigDecimal.valueOf(seconds))
+        .movePointRight(9)
+        .abs()
+        .setScale(0, RoundingMode.HALF_UP)
+        .intValueExact()
+    return Instant.ofEpochSecond(seconds, nanos.toLong())
+}

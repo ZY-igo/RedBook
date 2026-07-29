@@ -19,6 +19,7 @@ import com.zhengyang.redbook.data.remote.model.RemoteFollowingSeedDto
 import com.zhengyang.redbook.data.remote.model.RemoteFollowingUserDto
 import com.zhengyang.redbook.data.remote.model.RemoteHomeCategoryDto
 import com.zhengyang.redbook.data.remote.requireData
+import com.zhengyang.redbook.utils.AppLogger
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -65,7 +66,10 @@ class HomeRepositoryImpl @Inject constructor(
         if (!forceRefresh) {
             val cached = listDao.getDiscoverCategories()
             // 本地缓存有数据则直接返回
-            if (cached.isNotEmpty()) return@withContext cached.map { it.toDomain() }
+            if (cached.isNotEmpty()) {
+                AppLogger.d("HomeRepository", "getCategories hit cache size=${cached.size}, ids=${cached.joinToString { it.id }}")
+                return@withContext cached.map { it.toDomain() }
+            }
         }
 
         // 尝试从网络获取数据
@@ -74,12 +78,16 @@ class HomeRepositoryImpl @Inject constructor(
         }.getOrElse { error ->
             // 网络请求失败，降级到本地缓存
             val cached = listDao.getDiscoverCategories()
-            if (cached.isNotEmpty()) return@withContext cached.map { it.toDomain() }
+            if (cached.isNotEmpty()) {
+                return@withContext cached.map { it.toDomain() }
+            }
             // 本地也无缓存，则抛出异常
+            AppLogger.e("HomeRepository", "getCategories remote failed", error)
             throw error
         }
 
         // 网络请求成功，更新本地缓存并返回
+        AppLogger.d("HomeRepository", "getCategories remote success size=${remote.size}, ids=${remote.joinToString { it.id }}")
         listDao.replaceDiscoverCategories(remote.map { it.toEntity() })
         remote.map { it.toDomain() }
     }
@@ -122,6 +130,7 @@ class HomeRepositoryImpl @Inject constructor(
         limit: Int,
         forceRefresh: Boolean
     ): List<HomeDiscoverItem> = withContext(Dispatchers.IO) {
+        AppLogger.d("HomeRepository", "getDiscoverItemsPage categoryId=$categoryId, offset=$offset, limit=$limit, forceRefresh=$forceRefresh")
         // 优先检查本地缓存
         if (!forceRefresh) {
             val cached = listDao.getPagedHomeCardsBySection(categoryId, limit, offset)
@@ -142,6 +151,7 @@ class HomeRepositoryImpl @Inject constructor(
 
         // 转换为实体并写入本地缓存
         // offset=0 时替换整页，offset>0 时追加新数据
+        AppLogger.d("HomeRepository", "discover feed remote success categoryId=$categoryId, itemCount=${remote.size}, ids=${remote.joinToString { it.id }}")
         val entities = remote.mapIndexed { index, item ->
             item.toEntity(sectionKey = categoryId, sortOrder = offset + index)
         }

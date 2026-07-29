@@ -15,12 +15,14 @@ import com.zhengyang.redbook.databinding.FragmentHomeBinding
 import com.zhengyang.redbook.databinding.ItemHomeFollowingStoryBinding
 import com.zhengyang.redbook.databinding.ItemHomeFollowingSuggestionBinding
 import com.zhengyang.redbook.utils.AppLogger
+import com.zhengyang.redbook.utils.applyCircleAvatarDefaults
 
 /**
  * “关注”页头部区域渲染器。
  *
- * 在“未关注任何人”时渲染推荐用户卡片，
- * 在已有关注关系时渲染故事头像条和关注 feed。
+ * 负责根据当前首页状态渲染两种模式：
+ * 1. 没有关注任何人时，显示推荐关注用户卡片
+ * 2. 已经有关注关系时，显示顶部故事头像条和关注 feed
  */
 class HomeFollowingSectionRenderer(
     private val context: Context,
@@ -36,18 +38,17 @@ class HomeFollowingSectionRenderer(
         LayoutInflater.from(context)
     }
 
-    /**
-     * 根据首页状态刷新“关注”区域。
-     *
-     * @param state 当前首页状态。
-     * @param adapter 用于承载关注 feed 的列表适配器。
-     */
     fun render(state: HomeUiState, adapter: HomeAdapter) {
         val hasFollowing = state.followingUsers.isNotEmpty()
+        AppLogger.d(
+            TAG,
+            "render: hasFollowing=$hasFollowing, followingUsers=${state.followingUsers.size}, suggestedUsers=${state.suggestedUsers.size}, feedItems=${state.followingFeedItems.size}, followingErrorMessage=${state.followingErrorMessage}"
+        )
         binding.followingEmptyContainer.visibility = if (hasFollowing) View.GONE else View.VISIBLE
         binding.followingFeedContainer.visibility = if (hasFollowing) View.VISIBLE else View.GONE
 
         if (!hasFollowing) {
+            AppLogger.d(TAG, "render: route=empty_state_with_suggestions")
             binding.followingEmptyTitle.text = context.getString(R.string.home_following_empty_title)
             binding.followingEmptySubtitle.text = if (state.followingErrorMessage.isNullOrBlank()) {
                 context.getString(R.string.home_following_empty_subtitle)
@@ -60,16 +61,19 @@ class HomeFollowingSectionRenderer(
             return
         }
 
+        AppLogger.d(TAG, "render: route=stories_and_feed")
         renderStories(state.followingUsers)
         adapter.submitList(state.followingFeedItems)
     }
 
-    /**
-     * 渲染推荐关注用户列表。
-     */
     private fun renderSuggestions(users: List<FollowingUserItem>) {
+        AppLogger.d(TAG, "renderSuggestions: users=${users.size}")
         binding.followingSuggestionContainer.removeAllViews()
         users.forEach { user ->
+            AppLogger.d(
+                TAG,
+                "renderSuggestions item: userId=${user.id}, name=${user.name}, badge=${user.badge}, subtitle=${user.subtitle}, avatarUrl=${user.avatarUrl}"
+            )
             val itemBinding = ItemHomeFollowingSuggestionBinding.inflate(
                 inflater,
                 binding.followingSuggestionContainer,
@@ -77,8 +81,14 @@ class HomeFollowingSectionRenderer(
             )
             itemBinding.nameText.text = if (user.badge == null) user.name else "${user.name}${user.badge}"
             itemBinding.subtitleText.text = user.subtitle
-            itemBinding.followButton.setOnClickListener { onFollowUser(user.id) }
-            itemBinding.dismissButton.setOnClickListener { onDismissSuggestion(user.id) }
+            itemBinding.followButton.setOnClickListener {
+                AppLogger.d(TAG, "renderSuggestions follow click: userId=${user.id}")
+                onFollowUser(user.id)
+            }
+            itemBinding.dismissButton.setOnClickListener {
+                AppLogger.d(TAG, "renderSuggestions dismiss click: userId=${user.id}")
+                onDismissSuggestion(user.id)
+            }
             bindAvatar(
                 user = user,
                 container = itemBinding.avatarContainer,
@@ -91,12 +101,14 @@ class HomeFollowingSectionRenderer(
         }
     }
 
-    /**
-     * 渲染已关注用户的头像故事条。
-     */
     private fun renderStories(users: List<FollowingUserItem>) {
+        AppLogger.d(TAG, "renderStories: users=${users.size}")
         binding.followingStoryContainer.removeAllViews()
         users.forEach { user ->
+            AppLogger.d(
+                TAG,
+                "renderStories item: userId=${user.id}, name=${user.name}, avatarUrl=${user.avatarUrl}"
+            )
             val itemBinding = ItemHomeFollowingStoryBinding.inflate(
                 inflater,
                 binding.followingStoryContainer,
@@ -115,11 +127,6 @@ class HomeFollowingSectionRenderer(
         }
     }
 
-    /**
-     * 绑定用户头像。
-     *
-     * 当头像 URL 不可用时，会退化成首字母头像。
-     */
     private fun bindAvatar(
         user: FollowingUserItem,
         container: FrameLayout,
@@ -130,7 +137,7 @@ class HomeFollowingSectionRenderer(
     ) {
         AppLogger.d(
             TAG,
-            "bind following avatar, userId=${user.id}, userName=${user.name}, avatarUrl=${user.avatarUrl}"
+            "bindAvatar: userId=${user.id}, userName=${user.name}, avatarUrl=${user.avatarUrl}, avatarColorHex=${user.avatarColorHex}, textSizeSp=$textSizeSp, compact=$compact"
         )
         val avatarBackground = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
@@ -139,30 +146,43 @@ class HomeFollowingSectionRenderer(
                 setStroke(2, context.getColor(R.color.xhs_bg))
             }
         }
+        AppLogger.d(
+            TAG,
+            "bindAvatar: prepared background compact=$compact, hasStroke=${!compact}"
+        )
         container.background = null
         avatarText.text = user.name.take(1)
         avatarText.textSize = textSizeSp
         avatarText.setTypeface(avatarText.typeface, Typeface.BOLD)
         avatarText.background = avatarBackground
         avatarImage.background = avatarBackground.constantState?.newDrawable()?.mutate()
-        avatarImage.clipToOutline = true
+
         if (user.avatarUrl.isNullOrBlank()) {
+            AppLogger.d(
+                TAG,
+                "bindAvatar: avatarUrl empty, fallback to text avatar for userId=${user.id}"
+            )
             avatarImage.visibility = View.GONE
             avatarText.visibility = View.VISIBLE
             return
         }
 
+        AppLogger.d(TAG, "bindAvatar: start async image load for userId=${user.id}")
         avatarImage.load(user.avatarUrl) {
-            crossfade(true)
+            applyCircleAvatarDefaults()
             listener(
                 onStart = {
+                    AppLogger.d(
+                        TAG,
+                        "bindAvatar onStart: keep text avatar visible while loading, userId=${user.id}"
+                    )
                     avatarImage.visibility = View.GONE
                     avatarText.visibility = View.VISIBLE
                 },
                 onSuccess = { _, _ ->
                     AppLogger.d(
                         TAG,
-                        "following avatar load success, userId=${user.id}, avatarUrl=${user.avatarUrl}"
+                        "bindAvatar onSuccess: show remote avatar, userId=${user.id}, avatarUrl=${user.avatarUrl}"
                     )
                     avatarImage.visibility = View.VISIBLE
                     avatarText.visibility = View.GONE
@@ -170,7 +190,7 @@ class HomeFollowingSectionRenderer(
                 onError = { _, result ->
                     AppLogger.w(
                         TAG,
-                        "following avatar load error, userId=${user.id}, avatarUrl=${user.avatarUrl}, message=${result.throwable.message}",
+                        "bindAvatar onError: fallback to text avatar, userId=${user.id}, avatarUrl=${user.avatarUrl}, message=${result.throwable.message}",
                         result.throwable
                     )
                     avatarImage.visibility = View.GONE
