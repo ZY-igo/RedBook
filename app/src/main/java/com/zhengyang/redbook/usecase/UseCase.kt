@@ -1,6 +1,7 @@
 package com.zhengyang.redbook.usecase
 
 import com.zhengyang.redbook.core.common.Resource
+import kotlinx.coroutines.CancellationException
 
 /**
  * 用例统一契约。
@@ -71,6 +72,8 @@ abstract class ResourceUseCase<in Input, Output> : UseCase<Input, Resource<Outpu
     final override suspend fun invoke(input: Input): Resource<Output> {
         return try {
             Resource.Success(execute(input))
+        } catch (throwable: CancellationException) {
+            throw throwable
         } catch (throwable: Throwable) {
             Resource.Error(throwable = throwable)
         }

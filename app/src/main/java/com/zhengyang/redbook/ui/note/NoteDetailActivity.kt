@@ -315,6 +315,7 @@ class NoteDetailActivity : AppCompatActivity() {
                     startPlaybackService()
                 } else {
                     exoPlayer.pause()
+                    playbackManager.releasePlayer()
                 }
                 savePlaybackProgress(
                     videoUrl = currentVideoUrl,

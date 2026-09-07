@@ -5,7 +5,6 @@
  */
 package com.zhengyang.redbook.ui.home
 
-import android.content.Intent
 import android.content.res.Resources
 import android.net.ConnectivityManager
 import android.net.Network
@@ -52,7 +51,6 @@ import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
-import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**

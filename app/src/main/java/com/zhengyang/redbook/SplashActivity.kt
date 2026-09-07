@@ -16,6 +16,8 @@ class SplashActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySplashBinding
     private var hasStartedMain = false
 
+    private val launchMainRunnable = Runnable { launchMain() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivitySplashBinding.inflate(layoutInflater)
@@ -55,10 +57,16 @@ class SplashActivity : AppCompatActivity() {
         }, 1300L)
     }
 
+
     private fun launchMain() {
         if (hasStartedMain || isFinishing || isDestroyed) return
         hasStartedMain = true
         startActivity(Intent(this, MainActivity::class.java))
         finish()
+    }
+
+    override fun onDestroy() {
+        binding.root.removeCallbacks(launchMainRunnable)
+        super.onDestroy()
     }
 }
