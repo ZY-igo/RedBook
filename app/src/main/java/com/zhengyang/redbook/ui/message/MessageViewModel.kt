@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zhengyang.redbook.usecase.LoadMessageUiStateParams
 import com.zhengyang.redbook.usecase.LoadMessageUiStateUseCase
+import com.zhengyang.redbook.utils.AppLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,7 +27,18 @@ class MessageViewModel @Inject constructor(
 
     private fun loadMessageData(forceRefresh: Boolean) {
         viewModelScope.launch {
-            _uiState.value = loadMessageUiState(LoadMessageUiStateParams(forceRefresh))
+            // 后端不可用是常态（断网、人为停服、返回非 JSON 等），
+            // 这里用 runCatching 兜住所有网络/解析异常，保证主线程不崩溃。
+            // 失败时保留现有状态（首次加载即为默认空状态），仅记录日志，不向 UI 抛异常。
+            runCatching { loadMessageUiState(LoadMessageUiStateParams(forceRefresh)) }
+                .onSuccess { state -> _uiState.value = state }
+                .onFailure { error ->
+                    AppLogger.e(
+                        tag = "MessageViewModel",
+                        message = "loadMessageData failed, forceRefresh=$forceRefresh",
+                        throwable = error
+                    )
+                }
         }
     }
 

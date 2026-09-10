@@ -3,10 +3,10 @@
 // 备注：该注释用于快速说明配置文件在构建、混淆或工程组织中的职责。
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt.android)
-    id("com.google.gms.google-services")
 }
 
 val configuredBaseApiUrl = providers.gradleProperty("baseApiUrl")
@@ -15,11 +15,7 @@ val configuredBaseApiUrl = providers.gradleProperty("baseApiUrl")
 
 android {
     namespace = "com.zhengyang.redbook"
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
-    }
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.zhengyang.redbook"
@@ -43,6 +39,23 @@ android {
                 "proguard-rules.pro"
             )
         }
+        debug {
+            isMinifyEnabled = false
+            isDebuggable = true
+        }
+    }
+
+    flavorDimensions += "environment"
+    productFlavors {
+        create("prod") {
+            dimension = "environment"
+            buildConfigField("boolean", "USE_MOCK_DATA", "false")
+            apply(plugin = "com.google.gms.google-services")
+        }
+        create("dev") {
+            dimension = "environment"
+            buildConfigField("boolean", "USE_MOCK_DATA", "true")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -56,8 +69,18 @@ android {
 
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11
+    }
+}
+
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+hilt {
+    enableAggregatingTask = false
 }
 
 dependencies {

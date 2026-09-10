@@ -8,6 +8,7 @@ package com.zhengyang.redbook.ui.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zhengyang.redbook.data.repository.SearchRepository
+import com.zhengyang.redbook.utils.AppLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -47,15 +48,24 @@ class SearchViewModel @Inject constructor(
      */
     fun loadInitial() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                historyItems = searchRepository.getHistory(),
-                guessItems = searchRepository.getGuessItems(),
-                suggestionItems = emptyList(),
-                resultItems = emptyList(),
-                currentQuery = "",
-                currentFilter = ResultFilter.ALL,
-                screenMode = SearchScreenMode.DEFAULT
-            )
+            // 后端不可用时兜住异常，保留默认空状态，避免主线程崩溃。
+            runCatching {
+                _uiState.value = _uiState.value.copy(
+                    historyItems = searchRepository.getHistory(),
+                    guessItems = searchRepository.getGuessItems(),
+                    suggestionItems = emptyList(),
+                    resultItems = emptyList(),
+                    currentQuery = "",
+                    currentFilter = ResultFilter.ALL,
+                    screenMode = SearchScreenMode.DEFAULT
+                )
+            }.onFailure { error ->
+                AppLogger.e(
+                    tag = "SearchViewModel",
+                    message = "loadInitial failed",
+                    throwable = error
+                )
+            }
         }
     }
 
@@ -70,21 +80,39 @@ class SearchViewModel @Inject constructor(
     fun onQueryChanged(query: String) {
         val trimmed = query.trim()
         viewModelScope.launch {
-            _uiState.update { state ->
-                if (trimmed.isEmpty()) {
-                    state.copy(
-                        currentQuery = "",
-                        suggestionItems = emptyList(),
-                        resultItems = emptyList(),
-                        currentFilter = ResultFilter.ALL,
-                        screenMode = SearchScreenMode.DEFAULT
-                    )
-                } else {
-                    state.copy(
-                        currentQuery = trimmed,
-                        suggestionItems = searchRepository.getSuggestions(trimmed),
-                        screenMode = SearchScreenMode.SUGGESTION
-                    )
+            // 联想词请求可能因断网/后端不可用失败，这里兜住异常并降级为空建议列表。
+            runCatching {
+                _uiState.update { state ->
+                    if (trimmed.isEmpty()) {
+                        state.copy(
+                            currentQuery = "",
+                            suggestionItems = emptyList(),
+                            resultItems = emptyList(),
+                            currentFilter = ResultFilter.ALL,
+                            screenMode = SearchScreenMode.DEFAULT
+                        )
+                    } else {
+                        state.copy(
+                            currentQuery = trimmed,
+                            suggestionItems = searchRepository.getSuggestions(trimmed),
+                            screenMode = SearchScreenMode.SUGGESTION
+                        )
+                    }
+                }
+            }.onFailure { error ->
+                AppLogger.e(
+                    tag = "SearchViewModel",
+                    message = "onQueryChanged failed, query=$trimmed",
+                    throwable = error
+                )
+                if (trimmed.isNotEmpty()) {
+                    _uiState.update {
+                        it.copy(
+                            currentQuery = trimmed,
+                            suggestionItems = emptyList(),
+                            screenMode = SearchScreenMode.SUGGESTION
+                        )
+                    }
                 }
             }
         }
@@ -106,13 +134,31 @@ class SearchViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                historyItems = searchRepository.saveHistory(trimmed),
-                resultItems = searchRepository.getResults(trimmed),
-                currentQuery = trimmed,
-                currentFilter = ResultFilter.ALL,
-                screenMode = SearchScreenMode.RESULT
-            )
+            // 搜索结果请求可能因断网/后端不可用失败，这里兜住异常，
+            // 失败时仍切换到结果页但展示空结果，避免主线程崩溃。
+            runCatching {
+                _uiState.value = _uiState.value.copy(
+                    historyItems = searchRepository.saveHistory(trimmed),
+                    resultItems = searchRepository.getResults(trimmed),
+                    currentQuery = trimmed,
+                    currentFilter = ResultFilter.ALL,
+                    screenMode = SearchScreenMode.RESULT
+                )
+            }.onFailure { error ->
+                AppLogger.e(
+                    tag = "SearchViewModel",
+                    message = "submitSearch failed, query=$trimmed",
+                    throwable = error
+                )
+                _uiState.update {
+                    it.copy(
+                        resultItems = emptyList(),
+                        currentQuery = trimmed,
+                        currentFilter = ResultFilter.ALL,
+                        screenMode = SearchScreenMode.RESULT
+                    )
+                }
+            }
         }
     }
 
@@ -125,7 +171,14 @@ class SearchViewModel @Inject constructor(
      */
     fun clearHistory() {
         viewModelScope.launch {
-            searchRepository.clearHistory()
+            runCatching { searchRepository.clearHistory() }
+                .onFailure { error ->
+                    AppLogger.e(
+                        tag = "SearchViewModel",
+                        message = "clearHistory failed",
+                        throwable = error
+                    )
+                }
             _uiState.update { it.copy(historyItems = emptyList()) }
         }
     }

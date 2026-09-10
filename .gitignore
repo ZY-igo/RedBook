@@ -1,15 +1,79 @@
-*.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+# Built application files
+*.apk
+*.apk_
+*.aab
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+
+# Gradle files
+.gradle/
+build/
+
+# Local configuration file (sdk path, etc)
 local.properties
+
+# Log Files
+*.log
+
+# Android Studio Navigation editor
+*.naf
+
+# Android Studio Capture
+/captures
+
+# IntelliJ
+*.iml
+.idea/
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/gradle.xml
+.idea/assetWizardSettings.xml
+.idea/dictionaries
+.idea/libraries
+.idea/navEditor.xml
+.idea/caches/build_cache
+
+# Keystore files
+*.jks
+*.keystore
+
+# External Native Build
+.cxx/
+.externalNativeBuild
+
+# Google Services (contains sensitive info)
+google-services.json
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Backup files
+*.bak
+*~
+
+# Crashlytics
+crashlytics.properties
+crashlytics-build.properties
+
+# Local properties
+local.properties
+
+# KSP generated files
+schemas/
+
+# Room
+*.db
+*.db-journal

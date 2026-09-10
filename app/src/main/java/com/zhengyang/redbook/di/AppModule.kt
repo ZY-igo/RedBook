@@ -27,6 +27,8 @@ import com.zhengyang.redbook.data.repository.PublishRepository
 import com.zhengyang.redbook.data.repository.PublishRepositoryImpl
 import com.zhengyang.redbook.data.repository.SearchRepository
 import com.zhengyang.redbook.data.repository.SearchRepositoryImpl
+import com.google.gson.Gson
+import com.google.gson.GsonBuilder
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -41,6 +43,18 @@ import retrofit2.converter.scalars.ScalarsConverterFactory
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
+
+    /**
+     * 全局共享的 Gson 实例。
+     *
+     * 使用 setLenient(true) 放宽 JSON 解析规则，允许后端返回带尾部数据、
+     * 未转义字符等非严格 JSON 的情况，减少因后端响应不规范导致的解析崩溃。
+     * 注意：lenient 不能让 Gson 接受 HTML/纯文本等完全非法的响应，
+     * 真正的兜底仍依赖各 ViewModel/Repository 的 runCatching。
+     */
+    @Provides
+    @Singleton
+    fun provideGson(): Gson = GsonBuilder().setLenient().create()
 
     @Provides
     @Singleton
@@ -85,12 +99,13 @@ object AppModule {
     @Named("plain")
     fun providePlainRetrofit(
         @Named("plain") okHttpClient: OkHttpClient,
-        remoteApiConfig: RemoteApiConfig
+        remoteApiConfig: RemoteApiConfig,
+        gson: Gson
     ): Retrofit {
         return Retrofit.Builder()
             .baseUrl(remoteApiConfig.baseUrl)
             .client(okHttpClient)
-            .addConverterFactory(GsonConverterFactory.create())
+            .addConverterFactory(GsonConverterFactory.create(gson))
             .addConverterFactory(ScalarsConverterFactory.create())
             .build()
     }
@@ -99,12 +114,13 @@ object AppModule {
     @Singleton
     fun provideRetrofit(
         okHttpClient: OkHttpClient,
-        remoteApiConfig: RemoteApiConfig
+        remoteApiConfig: RemoteApiConfig,
+        gson: Gson
     ): Retrofit {
         return Retrofit.Builder()
             .baseUrl(remoteApiConfig.baseUrl)
             .client(okHttpClient)
-            .addConverterFactory(GsonConverterFactory.create())
+            .addConverterFactory(GsonConverterFactory.create(gson))
             .addConverterFactory(ScalarsConverterFactory.create())
             .build()
     }
@@ -114,12 +130,6 @@ object AppModule {
     fun provideAuthApiService(
         @Named("plain") retrofit: Retrofit
     ): AuthApiService = retrofit.create(AuthApiService::class.java)
-
-    @Provides
-    @Singleton
-    fun provideRedBookApiService(
-        retrofit: Retrofit
-    ): RedBookApiService = retrofit.create(RedBookApiService::class.java)
 
     @Provides
     @Singleton
