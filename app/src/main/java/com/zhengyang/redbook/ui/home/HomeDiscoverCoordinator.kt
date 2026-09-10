@@ -34,6 +34,11 @@ class HomeDiscoverCoordinator(
     private val discoverRequestVersion = AtomicInteger(0)
 
     /**
+     * 正在预取中的分类 id 集合，防止同一分类重复发起预取请求。
+     */
+    private val prefetchingIds = mutableSetOf<String>()
+
+    /**
      * 按分类缓存已经拿到的卡片列表。
      */
     private val discoverCache = linkedMapOf<String, List<HomeCardItem>>()
@@ -84,6 +89,33 @@ class HomeDiscoverCoordinator(
      * @return 已缓存列表；没有缓存时返回 `null`。
      */
     fun peekItems(categoryId: String): List<HomeCardItem>? = discoverCache[categoryId]
+
+    /**
+     * 静默预取某个分类的第一页数据，只更新缓存，不影响当前 UI 状态。
+     *
+     * 用于横向切分类时，在用户手指滑向目标分类的途中提前准备数据，
+     * 让用户滑过去时直接看到真实内容，而不是骨架屏。
+     *
+     * @param category 需要预取的目标分类。
+     */
+    suspend fun prefetchFirstPage(category: DiscoverCategoryItem) {
+        // 已有缓存则无需再拉。
+        if (discoverCache.containsKey(category.id)) return
+        // 同一分类正在预取中则跳过，避免并发请求。
+        if (!prefetchingIds.add(category.id)) return
+        try {
+            AppLogger.d("HomeDiscover", "prefetchFirstPage id=${category.id}")
+            val result = loadHomeDiscoverItems(
+                LoadHomeDiscoverItemsParams(category = category, forceRefresh = false)
+            )
+            // 只有当缓存仍为空时才写入，避免覆盖 refreshInternal 已写入的新鲜数据。
+            if (result is Resource.Success && !discoverCache.containsKey(category.id)) {
+                discoverCache[category.id] = result.data
+            }
+        } finally {
+            prefetchingIds.remove(category.id)
+        }
+    }
 
     /**
      * 加载指定分类的下一页内容。

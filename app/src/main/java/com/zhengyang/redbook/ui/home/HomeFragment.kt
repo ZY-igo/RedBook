@@ -111,6 +111,8 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     private var isDiscoverTransitionAnimating = false
     /** 当前一次发现流横向切换过程的上下文信息；为空表示未在切换中。 */
     private var activeDiscoverSwipe: DiscoverSwipeSession? = null
+    /** 当前切换会话是否已经触发过目标分类预取，避免重复请求。 */
+    private var hasPrefetchedSwipeTarget = false
     /** 发现流主列表复用的普通两列网格布局管理器。 */
     private var discoverGridLayoutManager: GridLayoutManager? = null
     /** 发现流主列表复用的瀑布流布局管理器。 */
@@ -596,13 +598,16 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     private fun setupDiscoverSwipeNavigation() {
         // 系统定义的最小滑动距离，用来过滤掉轻微抖动。
         val touchSlop = ViewConfiguration.get(requireContext()).scaledTouchSlop
+        // 横滑启动阈值：降到 touchSlop 的一半，减少"死区"让跟手更早开始，
+        // 但保留一个最小值避免点击误触。
+        val swipeStartThreshold = maxOf(touchSlop * 0.5f, 6f)
         // 在发现流列表上注册 item touch listener，识别横向切分类手势。
         binding.recyclerView.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
-            // 手指按下时的 X 坐标。
-            private var downX = 0f
-            // 手指按下时的 Y 坐标。
-            private var downY = 0f
-            // 当前是否已经正式进入“横向拖拽分类”的处理流程。
+            // 手指按下时的屏幕绝对 X 坐标（用 rawX 避免 RecyclerView 被平移后参考系变化）。
+            private var downRawX = 0f
+            // 手指按下时的屏幕绝对 Y 坐标。
+            private var downRawY = 0f
+            // 当前是否已经正式进入"横向拖拽分类"的处理流程。
             private var isDragging = false
 
             override fun onInterceptTouchEvent(
@@ -611,73 +616,68 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
             ): Boolean {
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
-                        // 记录按下位置，供后续计算水平/垂直位移。
-                        downX = event.x
-                        downY = event.y
-                        // 每次新的触摸序列都重置拖拽状态。
+                        // 用屏幕绝对坐标记录按下位置，避免后续 RecyclerView 被
+                        // translationX 平移后 event.x 参考系变化导致 deltaX 跳变。
+                        downRawX = event.rawX
+                        downRawY = event.rawY
                         isDragging = false
                     }
 
                     MotionEvent.ACTION_MOVE -> {
-                        // 当前页面状态不允许切分类时，直接放行给 RecyclerView 自己处理。
                         if (!canHandleDiscoverSwipe()) return false
+                        // 已在拖拽中时直接返回 true，由 onTouchEvent 统一处理跟手。
+                        if (isDragging) return true
 
-                        // 计算手指相对按下点的水平和垂直位移。
-                        val deltaX = event.x - downX
-                        val deltaY = event.y - downY
+                        val deltaX = event.rawX - downRawX
+                        val deltaY = event.rawY - downRawY
                         val absDeltaX = kotlin.math.abs(deltaX)
                         val absDeltaY = kotlin.math.abs(deltaY)
-                        // 只有“水平位移足够大且明显大于垂直位移”时，才认定为切分类手势。
-                        val isHorizontalSwipe =
-                            absDeltaX > touchSlop &&
-                                absDeltaX > absDeltaY * HORIZONTAL_SWIPE_DOMINANCE_RATIO
-                        if (!isHorizontalSwipe) return false
 
-                        // 第一次确认水平拖拽时，正式启动一次切换会话。
-                        if (!isDragging) {
-                            isDragging = startDiscoverSwipe(toNext = deltaX < 0f)
+                        // 检测到横向趋势强于纵向时，立即禁止所有祖先容器拦截事件，
+                        // 避免 PullRefreshLayout 因手指轻微垂直分量触发 moveSpinner ->
+                        // requestLayout() 导致 RecyclerView 在横滑期间反复重新布局。
+                        if (absDeltaX > swipeStartThreshold && absDeltaX > absDeltaY) {
+                            recyclerView.requestDisallowInterceptTouchEvent(true)
                         }
-                        // 如果成功进入拖拽状态，就持续刷新当前列表和预览列表的位置。
-                        if (isDragging) {
-                            updateDiscoverSwipe(deltaX)
-                        }
-                        // 返回 true 表示后续事件由当前监听器继续消费。
+
+                        // 横向位移尚未达到启动阈值时等待更多位移。
+                        if (absDeltaX <= swipeStartThreshold) return false
+                        // SmartSlide 角度扩展：yDiff/xDiff 比值 <= 阈值时视为横向拖拽。
+                        val angleRatio = if (absDeltaX > 0) absDeltaY / absDeltaX else Float.MAX_VALUE
+                        if (angleRatio > HORIZONTAL_ANGLE_EXPAND_THRESHOLD) return false
+
+                        // 确认启动横滑切换会话。
+                        isDragging = startDiscoverSwipe(toNext = deltaX < 0f)
                         return isDragging
                     }
 
                     MotionEvent.ACTION_UP,
                     MotionEvent.ACTION_CANCEL -> {
-                        // 手势结束时，根据拖拽距离决定是提交切换还是回弹。
                         if (isDragging) {
-                            finishDiscoverSwipe(commit = shouldCommitDiscoverSwipe(event.x - downX))
+                            finishDiscoverSwipe(commit = shouldCommitDiscoverSwipe(event.rawX - downRawX))
                         }
-                        // 结束当前触摸序列。
                         isDragging = false
                     }
                 }
-                // 如果已经在拖拽中，则继续拦截事件。
                 return isDragging
             }
 
             override fun onTouchEvent(recyclerView: RecyclerView, event: MotionEvent) {
                 when (event.actionMasked) {
                     MotionEvent.ACTION_MOVE -> {
-                        // 在已经拦截的前提下，持续同步拖拽位移。
                         if (isDragging) {
-                            updateDiscoverSwipe(event.x - downX)
+                            updateDiscoverSwipe(event.rawX - downRawX)
                         }
                     }
 
                     MotionEvent.ACTION_UP -> {
-                        // 抬手时按阈值提交或回弹。
                         if (isDragging) {
-                            finishDiscoverSwipe(commit = shouldCommitDiscoverSwipe(event.x - downX))
+                            finishDiscoverSwipe(commit = shouldCommitDiscoverSwipe(event.rawX - downRawX))
                             isDragging = false
                         }
                     }
 
                     MotionEvent.ACTION_CANCEL -> {
-                        // 事件被系统取消时，一律回弹，不提交切换。
                         if (isDragging) {
                             finishDiscoverSwipe(commit = false)
                             isDragging = false
@@ -767,6 +767,8 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
             ?: return false
         // 先把目标分类的预览内容绑定到预览列表。
         bindDiscoverSwipePreview(targetCategory)
+        // 重置预取标记，新会话开始后允许再次预取。
+        hasPrefetchedSwipeTarget = false
         // 记录本次切换会话的目标分类、方向和宽度。
         activeDiscoverSwipe = DiscoverSwipeSession(
             targetCategory = targetCategory,
@@ -781,6 +783,10 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         // 停止主列表与预览列表当前可能存在的惯性滚动。
         binding.recyclerView.stopScroll()
         binding.discoverSwipePreviewRecyclerView.stopScroll()
+        // 禁止父容器（PullRefreshLayout / DrawerLayout）拦截本次触摸序列的后续事件，
+        // 避免 PullRefreshLayout 因手指轻微垂直分量触发 moveSpinner -> requestLayout，
+        // 进而导致整个 RecyclerView 在横滑期间反复重新布局产生高频抖动。
+        binding.recyclerView.requestDisallowInterceptTouchEvent(true)
         // 显示预览容器，让目标分类列表进入屏幕外待命。
         binding.discoverSwipePreviewContainer.visibility = View.VISIBLE
         // 把当前列表和预览列表重置到切换起始位置。
@@ -806,13 +812,23 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
             currentTranslation = constrainedDelta,
             previewTranslation = previewBaseTranslation + constrainedDelta
         )
+
+        // SmartSlide 进度预取：拖拽进度达到阈值时，静默预取目标分类数据，
+        // 让用户滑过去时预览层直接显示真实内容而不是骨架屏。
+        val progress = kotlin.math.abs(constrainedDelta) / width
+        if (progress >= DISCOVER_SWIPE_PREFETCH_PROGRESS && !hasPrefetchedSwipeTarget) {
+            hasPrefetchedSwipeTarget = true
+            viewModel.prefetchDiscoverCategory(session.targetCategory)
+        }
     }
 
     /** 判断当前手势位移是否达到正式切换分类的阈值。 */
     private fun shouldCommitDiscoverSwipe(deltaX: Float): Boolean {
         val session = activeDiscoverSwipe ?: return false
         // 当水平位移达到屏宽一定比例后，认为用户意图明确，提交切换。
-        return kotlin.math.abs(deltaX) >= session.width * DISCOVER_SWIPE_COMMIT_THRESHOLD
+        // 显式减去 0.5px 的浮点误差容差，避免极端机型上浮点运算精度导致"明明滑过了却没切"。
+        val threshold = session.width * DISCOVER_SWIPE_COMMIT_THRESHOLD
+        return kotlin.math.abs(deltaX) >= threshold - 0.5f
     }
 
     /** 结束一次横向切换会话，并决定回弹还是提交目标分类。 */
@@ -898,23 +914,25 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         val session = activeDiscoverSwipe ?: return
         // 预览列表初始化到屏幕右侧或左侧整屏外。
         val previewStart = if (session.toNext) session.width else -session.width
-        setDiscoverSwipeTranslations(
-            currentTranslation = 0f,
-            previewTranslation = previewStart
-        )
+        // 先取消可能残留的 settle 动画，再直接设置起始平移值。
+        discoverSwipeAnimatedViews().forEach { view ->
+            view.animate().cancel()
+            view.translationX = 0f
+        }
+        binding.discoverSwipePreviewContainer.animate().cancel()
+        binding.discoverSwipePreviewContainer.translationX = previewStart
     }
 
     private fun setDiscoverSwipeTranslations(
         currentTranslation: Float,
         previewTranslation: Float
     ) {
-        // 先取消现有属性动画，避免和手势拖拽实时赋值打架。
+        // 拖拽期间是手势实时赋值，不会有正在运行的属性动画，
+        // 因此不再调用 animate().cancel()，避免每帧都创建/取消 ViewPropertyAnimator
+        // 带来的无谓开销和潜在的渲染抖动。
         discoverSwipeAnimatedViews().forEach { view ->
-            view.animate().cancel()
             view.translationX = currentTranslation
         }
-        // 同样取消预览容器动画后再直接设置平移值。
-        binding.discoverSwipePreviewContainer.animate().cancel()
         binding.discoverSwipePreviewContainer.translationX = previewTranslation
     }
 
@@ -1662,10 +1680,12 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         private const val RECOMMEND_CHANNEL_ID = "recommend"
         /** 触发分页加载时距离列表尾部的阈值。 */
         private const val LOAD_MORE_THRESHOLD = 4
-        /** 判定“横向意图明显强于纵向意图”时使用的比例阈值。 */
-        private const val HORIZONTAL_SWIPE_DOMINANCE_RATIO = 1.2f
+        /** 判定横滑手势的 yDiff/xDiff 比值上限，1.5 约等于 56°，让斜滑也能触发切分类。 */
+        private const val HORIZONTAL_ANGLE_EXPAND_THRESHOLD = 1.5f
         /** 横向拖拽达到屏宽该比例时，认为应提交分类切换。 */
         private const val DISCOVER_SWIPE_COMMIT_THRESHOLD = 0.28f
+        /** 滑动进度达到该比例时触发目标分类预取，避免用户试探性滑动就拉数据。 */
+        private const val DISCOVER_SWIPE_PREFETCH_PROGRESS = 0.2f
         /** 横向切换收尾动画时长。 */
         private const val DISCOVER_SWIPE_SETTLE_DURATION = 180L
         /** 顶部分类区显示动画时长。 */

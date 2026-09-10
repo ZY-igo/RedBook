@@ -127,6 +127,21 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * 静默预取某个分类的第一页数据，只填充缓存，不更新当前 UI。
+     *
+     * 主要用于发现流横向切分类手势的进度预取：当用户手指拖拽进度
+     * 超过一定阈值时，提前把目标分类数据拉到缓存里，这样用户
+     * 滑过去时预览层就能直接展示真实内容而不是骨架屏。
+     *
+     * @param category 需要预取的目标分类。
+     */
+    fun prefetchDiscoverCategory(category: DiscoverCategoryItem) {
+        viewModelScope.launch {
+            discoverCoordinator.prefetchFirstPage(category)
+        }
+    }
+
+    /**
      * 加载“发现”列表的下一页内容。
      *
      * @param category 当前分页所属的分类。
