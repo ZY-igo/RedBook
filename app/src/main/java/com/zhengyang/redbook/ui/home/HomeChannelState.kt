@@ -9,8 +9,24 @@ import kotlinx.coroutines.flow.update
  * 首页频道纯状态容器。
  *
  * 负责维护全部频道、我的频道和当前选中频道之间的一致性。
+ *
+ * 通过两个可选的持久化钩子接入存储层：
+ * - [persistedSelectionProvider]：首次 sync 时读取已保存的“我的频道” id 列表，
+ *   让应用重启后能恢复用户自定义的频道集合。
+ * - [selectionChangeListener]：当“我的频道”集合发生变化（首次建立、增删频道）时，
+ *   把最新的 id 列表回调给存储层持久化。
  */
-class HomeChannelState {
+class HomeChannelState(
+    /**
+     * 读取已持久化的“我的频道” id 列表；未持久化时返回 null 或空列表，
+     * 调用方会回退到服务端下发的默认频道。
+     */
+    private val persistedSelectionProvider: () -> List<String>? = { null },
+    /**
+     * “我的频道” id 列表发生变化时的回调，用于持久化最新选择。
+     */
+    private val selectionChangeListener: (List<String>) -> Unit = {}
+) {
     /**
      * 内部可变频道快照。
      */
@@ -42,6 +58,16 @@ class HomeChannelState {
     /**
      * 同步外部传入的频道列表。
      *
+     * 首次同步（当前“我的频道”为空）时按以下优先级重建 myChannels：
+     * 1. 读取 [persistedSelectionProvider] 返回的已持久化 id 列表，按其顺序从最新
+     *    categories 里取对应频道；若持久化的 id 全部失效则回退到默认频道。
+     * 2. 没有持久化记录时，使用 categories 中 isDefaultSelected=true 的频道。
+     *
+     * 非首次同步时，保留当前 myChannels 的选择，只按最新 categories 过滤掉已失效项。
+     *
+     * 无论走哪个分支，重建后都会通过 [selectionChangeListener] 把最新 id 列表回写，
+     * 保证持久化状态与内存一致。
+     *
      * @param categories 最新频道列表。
      */
     fun sync(categories: List<DiscoverCategoryItem>) {
@@ -49,7 +75,14 @@ class HomeChannelState {
 
         _state.update { snapshot ->
             val nextMyChannels = if (snapshot.myChannels.isEmpty()) {
-                categories.filter { it.isDefaultSelected }
+                val persistedIds = persistedSelectionProvider()?.orEmpty()
+                val fromPersisted = if (!persistedIds.isNullOrEmpty()) {
+                    val byId = categories.associateBy { it.id }
+                    persistedIds.mapNotNull { byId[it] }
+                } else {
+                    emptyList()
+                }
+                fromPersisted.ifEmpty { categories.filter { it.isDefaultSelected } }
             } else {
                 val selectedIds = snapshot.myChannels.mapTo(hashSetOf(), DiscoverCategoryItem::id)
                 categories.filter { it.id in selectedIds }
@@ -64,6 +97,9 @@ class HomeChannelState {
                     ?: nextMyChannels.firstOrNull()
             )
         }
+
+        // 重建后把最新“我的频道” id 列表回写存储层，保持持久化与内存一致。
+        selectionChangeListener(_state.value.myChannels.map { it.id })
     }
 
     /**
@@ -95,6 +131,9 @@ class HomeChannelState {
                 snapshot.copy(myChannels = snapshot.myChannels + category)
             }
         }
+        if (added) {
+            selectionChangeListener(_state.value.myChannels.map { it.id })
+        }
         return added
     }
 
@@ -121,6 +160,9 @@ class HomeChannelState {
                     }
                 )
             }
+        }
+        if (removed) {
+            selectionChangeListener(_state.value.myChannels.map { it.id })
         }
         return removed
     }

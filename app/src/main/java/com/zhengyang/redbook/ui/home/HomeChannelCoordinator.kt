@@ -5,9 +5,17 @@ package com.zhengyang.redbook.ui.home
  *
  * 对外暴露更贴近交互层的频道管理接口，
  * 底层实际状态维护由 [HomeChannelState] 完成。
+ *
+ * @param persistedSelectionProvider 读取已持久化的“我的频道” id 列表。
+ * @param selectionChangeListener “我的频道” id 列表变化时的回调，用于持久化。
  */
 class HomeChannelCoordinator(
-    private val state: HomeChannelState = HomeChannelState()
+    persistedSelectionProvider: () -> List<String>? = { null },
+    selectionChangeListener: (List<String>) -> Unit = {},
+    private val state: HomeChannelState = HomeChannelState(
+        persistedSelectionProvider = persistedSelectionProvider,
+        selectionChangeListener = selectionChangeListener
+    )
 ) {
     /**
      * 当前全部频道列表。

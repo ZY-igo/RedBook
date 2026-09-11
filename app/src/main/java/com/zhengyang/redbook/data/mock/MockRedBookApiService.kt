@@ -40,11 +40,33 @@ class MockRedBookApiService : RedBookApiService {
     }
 
     private val mockCategories = listOf(
-        RemoteHomeCategoryDto("1", "推荐", "discovery", true, 1, true),
-        RemoteHomeCategoryDto("2", "关注", "following", true, 2, false),
-        RemoteHomeCategoryDto("3", "美食", "discovery", true, 3, false),
-        RemoteHomeCategoryDto("4", "旅行", "discovery", true, 4, false),
-        RemoteHomeCategoryDto("5", "时尚", "discovery", true, 5, false)
+        // 默认选中：推荐 + 美食 + 旅行 + 时尚 + 美妆，覆盖小红书最常见的几大频道。
+        RemoteHomeCategoryDto("recommend", "推荐", "RECOMMEND", true, 1, true),
+        RemoteHomeCategoryDto("food", "美食", "FOOD", true, 2, true),
+        RemoteHomeCategoryDto("travel", "旅行", "TRAVEL", true, 3, true),
+        RemoteHomeCategoryDto("fashion", "时尚", "OUTFIT", true, 4, true),
+        RemoteHomeCategoryDto("beauty", "美妆", "OUTFIT", true, 5, true),
+        // 以下为可选频道，用户可以在频道管理面板里按需添加。
+        RemoteHomeCategoryDto("outfit", "穿搭", "OUTFIT", true, 6, false),
+        RemoteHomeCategoryDto("fitness", "健身", "TIPS", true, 7, false),
+        RemoteHomeCategoryDto("photography", "摄影", "RED", true, 8, false),
+        RemoteHomeCategoryDto("digital", "数码", "TIPS", true, 9, false),
+        RemoteHomeCategoryDto("game", "游戏", "RED", true, 10, false),
+        RemoteHomeCategoryDto("music", "音乐", "RED", true, 11, false),
+        RemoteHomeCategoryDto("movie", "电影", "RED", true, 12, false),
+        RemoteHomeCategoryDto("reading", "读书", "TIPS", true, 13, false),
+        RemoteHomeCategoryDto("pet", "萌宠", "RED", true, 14, false),
+        RemoteHomeCategoryDto("home", "家居", "RED", true, 15, false),
+        RemoteHomeCategoryDto("baby", "母婴", "RED", true, 16, false),
+        RemoteHomeCategoryDto("car", "汽车", "RED", true, 17, false),
+        RemoteHomeCategoryDto("outdoor", "户外", "TRAVEL", true, 18, false),
+        RemoteHomeCategoryDto("camping", "露营", "TRAVEL", true, 19, false),
+        RemoteHomeCategoryDto("emotion", "情感", "RED", true, 20, false),
+        RemoteHomeCategoryDto("career", "职场", "TIPS", true, 21, false),
+        RemoteHomeCategoryDto("anime", "二次元", "RED", true, 22, false),
+        RemoteHomeCategoryDto("sports", "体育", "RED", true, 23, false),
+        RemoteHomeCategoryDto("tech", "科技", "TIPS", true, 24, false),
+        RemoteHomeCategoryDto("wedding", "婚纱", "RED", true, 25, false)
     )
 
     private val mockFeedItems = listOf(

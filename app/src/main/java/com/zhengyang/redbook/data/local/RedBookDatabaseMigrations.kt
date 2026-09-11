@@ -323,11 +323,21 @@ object RedBookDatabaseMigrations {
         }
     }
 
+    private val MIGRATION_7_8 = object : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // 发现页频道 id 由旧的 "1".."5" 改为语义化 id（recommend/food/travel/...），
+            // 旧缓存中的分类和对应 sectionKey 的卡片已不再适用，清空让下一次请求重新拉取。
+            db.execSQL("DELETE FROM `discover_category`")
+            db.execSQL("DELETE FROM `home_card`")
+        }
+    }
+
     val ALL: Array<Migration> = arrayOf(
         MIGRATION_2_5,
         MIGRATION_3_5,
         MIGRATION_4_5,
         MIGRATION_5_6,
-        MIGRATION_6_7
+        MIGRATION_6_7,
+        MIGRATION_7_8
     )
 }

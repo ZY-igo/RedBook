@@ -41,6 +41,7 @@ import coil.request.ImageRequest
 import com.google.android.material.snackbar.Snackbar
 import com.zhengyang.redbook.R
 import com.zhengyang.redbook.databinding.FragmentHomeBinding
+import com.zhengyang.redbook.data.home.HomeChannelPrefsStorage
 import com.zhengyang.redbook.media.MediaPlayerFactory
 import com.zhengyang.redbook.ui.note.NoteDetailActivity
 import com.zhengyang.redbook.ui.search.SearchActivity
@@ -79,6 +80,10 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     @Inject
     lateinit var okHttpClient: OkHttpClient
 
+    @Inject
+    /** 由 Hilt 注入的“我的频道”持久化存储，用于保存/恢复用户自定义的频道集合。 */
+    lateinit var channelPrefsStorage: HomeChannelPrefsStorage
+
     /** 发现流主列表适配器。 */
     private lateinit var adapter: HomeAdapter
     /** 横向切换分类时，右侧/左侧预览列表使用的适配器。 */
@@ -90,7 +95,12 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     /** 关注流底部的状态提示适配器。 */
     private lateinit var followingFooterAdapter: HomeFeedFooterAdapter
     /** 管理首页频道数据、当前选中频道、编辑模式和频道增删逻辑。 */
-    private val channelCoordinator = HomeChannelCoordinator()
+    private val channelCoordinator by lazy {
+        HomeChannelCoordinator(
+            persistedSelectionProvider = { channelPrefsStorage.loadMyChannelIds() },
+            selectionChangeListener = { ids -> channelPrefsStorage.saveMyChannelIds(ids) }
+        )
+    }
     /** 当前显示中的网络断开提示条；为空表示未显示。 */
     private var networkSnackbar: Snackbar? = null
     /** 注册到系统的网络回调；仅在页面可见期间持有。 */

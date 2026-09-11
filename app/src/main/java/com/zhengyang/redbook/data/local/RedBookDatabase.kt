@@ -57,7 +57,7 @@ import com.zhengyang.redbook.data.model.SearchResultEntity
         PlaybackProgressEntity::class,
         DraftEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 
